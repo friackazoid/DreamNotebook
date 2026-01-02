@@ -1,5 +1,3 @@
-import 'drawing_stroke.dart';
-
 class DailyTaskItem {
   DailyTaskItem({this.done = false, this.text = ''});
 
@@ -26,12 +24,12 @@ class DailyPlan {
     required this.dateKey,
     List<DailyTaskItem>? localTodos,
     Map<int, String>? hourlyNotes,
-    List<Stroke>? scheduleStrokes,
     Map<String, WeeklyTodoMirror>? weeklyTodos,
+    List<DayScheduleEvent>? events,
   })  : localTodos = localTodos ?? List.generate(10, (_) => DailyTaskItem()),
         hourlyNotes = hourlyNotes ?? {},
-        scheduleStrokes = scheduleStrokes ?? [],
-        weeklyTodos = weeklyTodos ?? {} {
+        weeklyTodos = weeklyTodos ?? {},
+        events = events ?? [] {
     if (this.localTodos.length != 10) {
       throw ArgumentError('DailyPlan requires exactly 10 todo items.');
     }
@@ -40,8 +38,8 @@ class DailyPlan {
   final String dateKey;
   final List<DailyTaskItem> localTodos;
   final Map<int, String> hourlyNotes;
-  final List<Stroke> scheduleStrokes;
   final Map<String, WeeklyTodoMirror> weeklyTodos;
+  final List<DayScheduleEvent> events;
 
   factory DailyPlan.empty(String dateKey) {
     return DailyPlan(dateKey: dateKey);
@@ -65,8 +63,6 @@ class DailyPlan {
       if (hour == null) continue;
       hourly[hour] = entry.value as String? ?? '';
     }
-    final strokesJson = (json['scheduleStrokes'] as List<dynamic>? ?? [])
-        .cast<Map<String, dynamic>>();
     final weeklyJson = (json['weeklyTodos'] as Map<String, dynamic>? ?? {});
     final weeklyTodos = <String, WeeklyTodoMirror>{};
     for (final entry in weeklyJson.entries) {
@@ -75,13 +71,14 @@ class DailyPlan {
         weeklyTodos[entry.key] = WeeklyTodoMirror.fromJson(value);
       }
     }
+    final eventsJson = (json['events'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
     return DailyPlan(
       dateKey: json['dateKey'] as String? ?? '',
       localTodos: todos,
       hourlyNotes: hourly,
-      scheduleStrokes:
-          strokesJson.map((item) => Stroke.fromJson(item)).toList(),
       weeklyTodos: weeklyTodos,
+      events: eventsJson.map((item) => DayScheduleEvent.fromJson(item)).toList(),
     );
   }
 
@@ -92,10 +89,10 @@ class DailyPlan {
       'hourlyNotes': hourlyNotes.map(
         (key, value) => MapEntry(key.toString(), value),
       ),
-      'scheduleStrokes': scheduleStrokes.map((stroke) => stroke.toJson()).toList(),
       'weeklyTodos': weeklyTodos.map(
         (key, value) => MapEntry(key, value.toJson()),
       ),
+      'events': events.map((event) => event.toJson()).toList(),
     };
   }
 }
@@ -156,6 +153,38 @@ class WeeklyTodoMirror {
       'weeklyTodoId': weeklyTodoId,
       'parentDoneOverride': parentDoneOverride,
       'subTasks': subTasks.map((task) => task.toJson()).toList(),
+    };
+  }
+}
+
+class DayScheduleEvent {
+  DayScheduleEvent({
+    required this.id,
+    required this.title,
+    required this.startHour,
+    required this.endHour,
+  });
+
+  final String id;
+  String title;
+  int startHour;
+  int endHour;
+
+  factory DayScheduleEvent.fromJson(Map<String, dynamic> json) {
+    return DayScheduleEvent(
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      startHour: json['startHour'] as int? ?? 6,
+      endHour: json['endHour'] as int? ?? 7,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'startHour': startHour,
+      'endHour': endHour,
     };
   }
 }

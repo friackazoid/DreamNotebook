@@ -8,7 +8,6 @@ import '../../../core/storage/daily_plan_repository.dart';
 import '../../../core/storage/weekly_plan_repository.dart';
 import '../../../models/daily_plan.dart';
 import '../../../models/weekly_plan.dart';
-import '../../../widgets/handwriting_canvas.dart';
 
 class DailyPlannerPage extends StatefulWidget {
   const DailyPlannerPage({
@@ -33,15 +32,16 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   late final DailyPlanRepository _dailyRepository;
   late final WeeklyPlanRepository _weeklyRepository;
   late final PlannerSyncService _syncService;
-  late final HandwritingController _scheduleController;
   late DateTime _currentDate;
   DailyPlan? _plan;
   WeeklyPlan? _weeklyPlan;
   List<WeeklyTodo> _weeklyTodosForDay = [];
   bool _loading = true;
-  bool _isApplyingPlan = false;
   bool _hasQuickNote = false;
   Timer? _debounce;
+  int? _dragStartHour;
+  int? _dragCurrentHour;
+  bool _isDragging = false;
 
 
   @override
@@ -53,8 +53,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
       dailyRepository: _dailyRepository,
       weeklyRepository: _weeklyRepository,
     );
-    _scheduleController = HandwritingController();
-    _scheduleController.addListener(_onScheduleChanged);
     _currentDate = _normalizeDate(
       widget.initialDate ??
           _parseDateKey(widget.initialDateKey) ??
@@ -77,8 +75,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   @override
   void dispose() {
     _debounce?.cancel();
-    _scheduleController.removeListener(_onScheduleChanged);
-    _scheduleController.dispose();
     super.dispose();
   }
 
@@ -107,19 +103,27 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
                     const SizedBox(height: 16),
                     _ScheduleSection(
                       hours: _hours,
-                      controller: _scheduleController,
+                      events: _plan?.events ?? [],
+                      dragStartHour: _dragStartHour,
+                      dragCurrentHour: _dragCurrentHour,
+                      isDragging: _isDragging,
+                      onHourTap: _onHourTap,
+                      onEventTap: _onEventTap,
+                      onDragStart: _onDragStart,
+                      onDragUpdate: _onDragUpdate,
+                      onDragEnd: _onDragEnd,
                     ),
                     const SizedBox(height: 16),
-                _WeeklyTodoSection(
-                  weeklyTodos: _weeklyTodosForDay,
-                  mirrors: _plan?.weeklyTodos ?? {},
-                  onToggleParent: _onWeeklyParentToggled,
-                  onSubTaskChanged: _onWeeklySubTaskChanged,
-                  onSubTaskToggle: _onWeeklySubTaskToggled,
+                    _WeeklyTodoSection(
+                      weeklyTodos: _weeklyTodosForDay,
+                      mirrors: _plan?.weeklyTodos ?? {},
+                      onToggleParent: _onWeeklyParentToggled,
+                      onSubTaskChanged: _onWeeklySubTaskChanged,
+                      onSubTaskToggle: _onWeeklySubTaskToggled,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
             ],
           );
   }
@@ -130,9 +134,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     _plan = result.dailyPlan;
     _weeklyPlan = result.weeklyPlan;
     _weeklyTodosForDay = result.weeklyTodosForDay;
-    _isApplyingPlan = true;
-    _applyPlanToControllers(result.dailyPlan);
-    _isApplyingPlan = false;
     await _refreshQuickNoteIndicator();
     setState(() => _loading = false);
   }
@@ -167,15 +168,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     setState(() {});
   }
 
-  void _applyPlanToControllers(DailyPlan plan) {
-    _scheduleController.loadStrokes(plan.scheduleStrokes);
-  }
-
-  void _onScheduleChanged() {
-    if (_isApplyingPlan) return;
-    _scheduleAutoSave();
-  }
-
   void _scheduleAutoSave() {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 650), _saveCurrentPlan);
@@ -185,9 +177,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     _debounce?.cancel();
     final plan = _plan;
     if (plan == null) return;
-    plan.scheduleStrokes
-      ..clear()
-      ..addAll(_scheduleController.strokes);
     await _syncService.saveDaily(plan);
     final weeklyPlan = _weeklyPlan;
     if (weeklyPlan != null) {
@@ -243,6 +232,117 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
       _onWeeklyParentToggled(todoId, true);
     }
     _scheduleAutoSave();
+  }
+
+  void _onHourTap(int hour) {
+    _openEventEditor(
+      startHour: hour,
+      endHour: hour + 1,
+    );
+  }
+
+  void _onEventTap(DayScheduleEvent event) {
+    _openEventEditor(existing: event);
+  }
+
+  void _onDragStart(Offset localPosition, double rowHeight) {
+    final hour = _hourFromOffset(localPosition, rowHeight);
+    if (hour == null) return;
+    setState(() {
+      _isDragging = true;
+      _dragStartHour = hour;
+      _dragCurrentHour = hour;
+    });
+  }
+
+  void _onDragUpdate(Offset localPosition, double rowHeight) {
+    final hour = _hourFromOffset(localPosition, rowHeight);
+    if (hour == null || !_isDragging) return;
+    setState(() {
+      _dragCurrentHour = hour;
+    });
+  }
+
+  void _onDragEnd() {
+    if (!_isDragging || _dragStartHour == null || _dragCurrentHour == null) {
+      _resetDrag();
+      return;
+    }
+    final start = _dragStartHour!;
+    final end = _dragCurrentHour!;
+    final startHour = start < end ? start : end;
+    final endHour = (start > end ? start : end) + 1;
+    _resetDrag();
+    _openEventEditor(startHour: startHour, endHour: endHour);
+  }
+
+  void _resetDrag() {
+    setState(() {
+      _isDragging = false;
+      _dragStartHour = null;
+      _dragCurrentHour = null;
+    });
+  }
+
+  int? _hourFromOffset(Offset localPosition, double rowHeight) {
+    final index = localPosition.dy ~/ rowHeight;
+    final hour = _startHour + index;
+    if (hour < _startHour || hour > _endHour) return null;
+    return hour;
+  }
+
+  Future<void> _openEventEditor({
+    DayScheduleEvent? existing,
+    int? startHour,
+    int? endHour,
+  }) async {
+    final plan = _plan;
+    if (plan == null) return;
+    final result = await showDialog<_EventEditorResult>(
+      context: context,
+      builder: (context) {
+        return _EventEditorDialog(
+          existing: existing,
+          startHour: startHour,
+          endHour: endHour,
+          minHour: _startHour,
+          maxHour: _endHour + 1,
+        );
+      },
+    );
+    if (result == null) return;
+    if (result.delete && existing != null) {
+      setState(() => plan.events.removeWhere((e) => e.id == existing.id));
+      await _saveCurrentPlan();
+      return;
+    }
+    final newEvent = result.event;
+    if (newEvent == null) return;
+    final overlaps = plan.events.any((event) {
+      if (existing != null && event.id == existing.id) return false;
+      return _eventsOverlap(event, newEvent);
+    });
+    if (overlaps) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Event overlaps with another event.')),
+      );
+      return;
+    }
+    setState(() {
+      if (existing == null) {
+        plan.events.add(newEvent);
+      } else {
+        existing.title = newEvent.title;
+        existing.startHour = newEvent.startHour;
+        existing.endHour = newEvent.endHour;
+      }
+    });
+    await _saveCurrentPlan();
+  }
+
+  bool _eventsOverlap(DayScheduleEvent a, DayScheduleEvent b) {
+    return a.startHour < b.endHour && b.startHour < a.endHour;
   }
 }
 
@@ -307,11 +407,27 @@ class _Header extends StatelessWidget {
 class _ScheduleSection extends StatelessWidget {
   const _ScheduleSection({
     required this.hours,
-    required this.controller,
+    required this.events,
+    required this.dragStartHour,
+    required this.dragCurrentHour,
+    required this.isDragging,
+    required this.onHourTap,
+    required this.onEventTap,
+    required this.onDragStart,
+    required this.onDragUpdate,
+    required this.onDragEnd,
   });
 
   final List<int> hours;
-  final HandwritingController controller;
+  final List<DayScheduleEvent> events;
+  final int? dragStartHour;
+  final int? dragCurrentHour;
+  final bool isDragging;
+  final ValueChanged<int> onHourTap;
+  final ValueChanged<DayScheduleEvent> onEventTap;
+  final void Function(Offset localPosition, double rowHeight) onDragStart;
+  final void Function(Offset localPosition, double rowHeight) onDragUpdate;
+  final VoidCallback onDragEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -319,117 +435,65 @@ class _ScheduleSection extends StatelessWidget {
     const labelWidth = 64.0;
     return _SectionCard(
       title: '',
-      child: Column(
-        children: [
-          AnimatedBuilder(
-            animation: controller,
-            builder: (context, _) {
-              final isErasing = controller.tool == HandwritingTool.eraser;
-              return Row(
-                children: [
-                  FilledButton.tonalIcon(
-                    onPressed: () => controller.setTool(HandwritingTool.pen),
-                    icon: Icon(
-                      Icons.edit,
-                      color: isErasing
-                          ? Theme.of(context).colorScheme.onSurface
-                          : Theme.of(context).colorScheme.primary,
-                    ),
-                    label: const Text('Pen'),
-                  ),
-                  const SizedBox(width: 12),
-                  FilledButton.tonalIcon(
-                    onPressed: () => controller.setTool(HandwritingTool.eraser),
-                    icon: Icon(
-                      Icons.auto_fix_high,
-                      color: isErasing
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurface,
-                    ),
-                    label: const Text('Eraser'),
-                  ),
-                  const Spacer(),
-                  OutlinedButton.icon(
-                    onPressed: () => controller.clear(),
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Clear'),
-                  ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: hours.length * rowHeight,
-            child: ClipRRect(
+      child: SizedBox(
+        height: hours.length * rowHeight,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border.all(
+                color: Theme.of(context).dividerColor,
+              ),
               borderRadius: BorderRadius.circular(12),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  border: Border.all(
-                    color: Theme.of(context).dividerColor,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Stack(
-                  children: [
-                    CustomPaint(
-                      painter: _HourlyGridPainter(
-                        hours: hours,
-                        rowHeight: rowHeight,
-                        labelWidth: labelWidth,
-                        textStyle: Theme.of(context).textTheme.labelMedium ??
-                            const TextStyle(fontSize: 12),
-                        lineColor: Theme.of(context).dividerColor,
-                        labelColor: Theme.of(context).hintColor,
-                      ),
-                      size: Size.infinite,
-                    ),
-                    Positioned.fill(
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: labelWidth + 8),
-                        child: HandwritingCanvas(controller: controller),
-                      ),
-                    ),
-                  ],
-                ),
+            ),
+            child: GestureDetector(
+              onPanStart: (details) =>
+                  onDragStart(details.localPosition, rowHeight),
+              onPanUpdate: (details) =>
+                  onDragUpdate(details.localPosition, rowHeight),
+              onPanEnd: (_) => onDragEnd(),
+              child: ListView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: hours.length,
+                itemBuilder: (context, index) {
+                  final hour = hours[index];
+                  final event = _eventForHour(events, hour);
+                  final isSelected = _isHourInDrag(
+                    hour,
+                    dragStartHour,
+                    dragCurrentHour,
+                    isDragging,
+                  );
+                  final isCovered = event != null;
+                  return _HourRow(
+                    hourLabel: _formatHour(hour),
+                    labelWidth: labelWidth,
+                    rowHeight: rowHeight,
+                    highlight: isSelected || isCovered,
+                    highlightColor: isSelected
+                        ? Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withOpacity(0.12)
+                        : Theme.of(context)
+                            .colorScheme
+                            .surfaceVariant
+                            .withOpacity(0.5),
+                    title: event?.title ?? '',
+                    onTap: () {
+                      if (event != null) {
+                        onEventTap(event);
+                      } else {
+                        onHourTap(hour);
+                      }
+                    },
+                  );
+                },
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TodoSection extends StatelessWidget {
-  const _TodoSection({
-    required this.title,
-    required this.controllers,
-    required this.checks,
-    required this.onToggle,
-    required this.onChanged,
-  });
-
-  final String title;
-  final List<TextEditingController> controllers;
-  final List<bool> checks;
-  final void Function(int index, bool value) onToggle;
-  final void Function(int index, String value) onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return _SectionCard(
-      title: title,
-      child: Column(
-        children: List.generate(controllers.length, (index) {
-          return _TodoRow(
-            checked: checks[index],
-            controller: controllers[index],
-            onToggle: (value) => onToggle(index, value),
-            onChanged: (value) => onChanged(index, value),
-          );
-        }),
+        ),
       ),
     );
   }
@@ -616,122 +680,237 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-class _HourlyGridPainter extends CustomPainter {
-  _HourlyGridPainter({
-    required this.hours,
-    required this.rowHeight,
+class _HourRow extends StatelessWidget {
+  const _HourRow({
+    required this.hourLabel,
     required this.labelWidth,
-    required this.textStyle,
-    required this.lineColor,
-    required this.labelColor,
+    required this.rowHeight,
+    required this.highlight,
+    required this.highlightColor,
+    required this.title,
+    required this.onTap,
   });
 
-  final List<int> hours;
-  final double rowHeight;
+  final String hourLabel;
   final double labelWidth;
-  final TextStyle textStyle;
-  final Color lineColor;
-  final Color labelColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 1;
-    final labelPaint = Paint()
-      ..color = labelColor
-      ..strokeWidth = 1;
-
-    canvas.drawLine(
-      Offset(labelWidth, 0),
-      Offset(labelWidth, size.height),
-      labelPaint,
-    );
-
-    for (var i = 0; i < hours.length; i++) {
-      final y = rowHeight * i;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
-
-      final hour = hours[i];
-      final label = _formatHour(hour);
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: textStyle.copyWith(color: labelColor),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: labelWidth - 8);
-      textPainter.paint(
-        canvas,
-        Offset(8, y + (rowHeight - textPainter.height) / 2),
-      );
-    }
-
-    canvas.drawLine(
-      Offset(0, rowHeight * hours.length),
-      Offset(size.width, rowHeight * hours.length),
-      linePaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _HourlyGridPainter oldDelegate) {
-    return oldDelegate.hours.length != hours.length ||
-        oldDelegate.rowHeight != rowHeight ||
-        oldDelegate.labelWidth != labelWidth ||
-        oldDelegate.textStyle != textStyle ||
-        oldDelegate.lineColor != lineColor ||
-        oldDelegate.labelColor != labelColor;
-  }
-}
-
-class _TodoRow extends StatelessWidget {
-  const _TodoRow({
-    required this.checked,
-    required this.controller,
-    required this.onToggle,
-    required this.onChanged,
-  });
-
-  final bool checked;
-  final TextEditingController controller;
-  final ValueChanged<bool> onToggle;
-  final ValueChanged<String> onChanged;
+  final double rowHeight;
+  final bool highlight;
+  final Color highlightColor;
+  final String title;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: theme.dividerColor),
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        height: rowHeight,
+        decoration: BoxDecoration(
+          color: highlight ? highlightColor : Colors.transparent,
+          border: Border(
+            bottom: BorderSide(color: theme.dividerColor),
+          ),
         ),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Checkbox(
-            value: checked,
-            onChanged: (value) => onToggle(value ?? false),
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              maxLines: 1,
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
+        child: Row(
+          children: [
+            SizedBox(
+              width: labelWidth,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(
+                  hourLabel,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.hintColor,
+                  ),
+                ),
               ),
-              onChanged: onChanged,
             ),
-          ),
-        ],
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+DayScheduleEvent? _eventForHour(List<DayScheduleEvent> events, int hour) {
+  for (final event in events) {
+    if (hour >= event.startHour && hour < event.endHour) {
+      return event;
+    }
+  }
+  return null;
+}
+
+bool _isHourInDrag(
+  int hour,
+  int? start,
+  int? current,
+  bool isDragging,
+) {
+  if (!isDragging || start == null || current == null) return false;
+  final minHour = start < current ? start : current;
+  final maxHour = start > current ? start : current;
+  return hour >= minHour && hour <= maxHour;
+}
+
+class _EventEditorResult {
+  const _EventEditorResult({this.event, this.delete = false});
+
+  final DayScheduleEvent? event;
+  final bool delete;
+}
+
+class _EventEditorDialog extends StatefulWidget {
+  const _EventEditorDialog({
+    this.existing,
+    this.startHour,
+    this.endHour,
+    required this.minHour,
+    required this.maxHour,
+  });
+
+  final DayScheduleEvent? existing;
+  final int? startHour;
+  final int? endHour;
+  final int minHour;
+  final int maxHour;
+
+  @override
+  State<_EventEditorDialog> createState() => _EventEditorDialogState();
+}
+
+class _EventEditorDialogState extends State<_EventEditorDialog> {
+  late final TextEditingController _titleController;
+  late int _startHour;
+  late int _endHour;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController =
+        TextEditingController(text: widget.existing?.title ?? '');
+    _startHour = widget.existing?.startHour ??
+        widget.startHour ??
+        widget.minHour;
+    _endHour = widget.existing?.endHour ??
+        widget.endHour ??
+        (_startHour + 1).clamp(widget.minHour + 1, widget.maxHour);
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.existing == null ? 'New Event' : 'Edit Event'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _titleController,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(labelText: 'Title'),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: _startHour,
+                  decoration: const InputDecoration(labelText: 'Start'),
+                  items: _hourItems(widget.minHour, widget.maxHour - 1),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _startHour = value;
+                      if (_endHour <= _startHour) {
+                        _endHour = _startHour + 1;
+                      }
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: _endHour,
+                  decoration: const InputDecoration(labelText: 'End'),
+                  items: _hourItems(widget.minHour + 1, widget.maxHour),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _endHour = value;
+                      if (_endHour <= _startHour) {
+                        _startHour = _endHour - 1;
+                      }
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        if (widget.existing != null)
+          TextButton(
+            onPressed: () => Navigator.pop(
+              context,
+              const _EventEditorResult(delete: true),
+            ),
+            child: const Text('Delete'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final title = _titleController.text.trim();
+            if (title.isEmpty) {
+              Navigator.pop(context);
+              return;
+            }
+            final event = DayScheduleEvent(
+              id: widget.existing?.id ?? _newEventId(),
+              title: title,
+              startHour: _startHour,
+              endHour: _endHour,
+            );
+            Navigator.pop(context, _EventEditorResult(event: event));
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+List<DropdownMenuItem<int>> _hourItems(int start, int end) {
+  return List.generate(end - start + 1, (index) {
+    final hour = start + index;
+    return DropdownMenuItem(
+      value: hour,
+      child: Text(_formatHour(hour)),
+    );
+  });
+}
+
+String _newEventId() {
+  return DateTime.now().microsecondsSinceEpoch.toString();
 }
 
 String _dateKey(DateTime date) {
