@@ -1,11 +1,17 @@
-class TaskLine {
-  TaskLine({this.text = '', this.done = false});
+class WeeklyTodo {
+  WeeklyTodo({
+    required this.id,
+    this.text = '',
+    this.done = false,
+  });
 
+  final String id;
   bool done;
   String text;
 
-  factory TaskLine.fromJson(Map<String, dynamic> json) {
-    return TaskLine(
+  factory WeeklyTodo.fromJson(Map<String, dynamic> json) {
+    return WeeklyTodo(
+      id: json['id'] as String? ?? '',
       text: json['text'] as String? ?? '',
       done: json['done'] as bool? ?? false,
     );
@@ -13,6 +19,7 @@ class TaskLine {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'text': text,
       'done': done,
     };
@@ -22,15 +29,15 @@ class TaskLine {
 class DayPlan {
   DayPlan({
     required this.dateKey,
-    List<TaskLine>? mits,
-  }) : mits = mits ?? List.generate(3, (_) => TaskLine()) {
+    List<WeeklyTodo>? mits,
+  }) : mits = mits ?? _defaultMits(dateKey) {
     if (this.mits.length != 3) {
       throw ArgumentError('Each day must have exactly 3 MIT lines.');
     }
   }
 
   final String dateKey;
-  final List<TaskLine> mits;
+  final List<WeeklyTodo> mits;
 
   factory DayPlan.fromJson(Map<String, dynamic> json) {
     final mitsJson = (json['mits'] as List<dynamic>? ?? [])
@@ -39,9 +46,18 @@ class DayPlan {
       dateKey: json['dateKey'] as String? ?? '',
       mits: List.generate(
         3,
-        (index) => index < mitsJson.length
-            ? TaskLine.fromJson(mitsJson[index])
-            : TaskLine(),
+        (index) {
+          if (index >= mitsJson.length) {
+            return WeeklyTodo(id: _fallbackId(json['dateKey'] as String?, index));
+          }
+          final todo = WeeklyTodo.fromJson(mitsJson[index]);
+          if (todo.id.isNotEmpty) return todo;
+          return WeeklyTodo(
+            id: _fallbackId(json['dateKey'] as String?, index),
+            text: todo.text,
+            done: todo.done,
+          );
+        },
       ),
     );
   }
@@ -91,10 +107,10 @@ class WeeklyPlan {
   WeeklyPlan({
     required this.weekKey,
     List<DayPlan>? days,
-    List<TaskLine>? weeklyGoals,
+    List<WeeklyTodo>? weeklyGoals,
     List<MatrixQuadrant>? matrix,
   })  : days = days ?? _defaultDays(weekKey),
-        weeklyGoals = weeklyGoals ?? List.generate(5, (_) => TaskLine()),
+        weeklyGoals = weeklyGoals ?? _defaultGoals(),
         matrix = matrix ?? _defaultMatrix() {
     if (this.days.length != 7) {
       throw ArgumentError('Weekly plan needs 7 days.');
@@ -109,7 +125,7 @@ class WeeklyPlan {
 
   final String weekKey;
   final List<DayPlan> days;
-  final List<TaskLine> weeklyGoals;
+  final List<WeeklyTodo> weeklyGoals;
   final List<MatrixQuadrant> matrix;
 
   factory WeeklyPlan.empty(String weekKey) {
@@ -133,9 +149,18 @@ class WeeklyPlan {
       ),
       weeklyGoals: List.generate(
         5,
-        (index) => index < goalsJson.length
-            ? TaskLine.fromJson(goalsJson[index])
-            : TaskLine(),
+        (index) {
+          if (index >= goalsJson.length) {
+            return WeeklyTodo(id: _goalId(index));
+          }
+          final goal = WeeklyTodo.fromJson(goalsJson[index]);
+          if (goal.id.isNotEmpty) return goal;
+          return WeeklyTodo(
+            id: _goalId(index),
+            text: goal.text,
+            done: goal.done,
+          );
+        },
       ),
       matrix: List.generate(
         4,
@@ -164,6 +189,16 @@ List<DayPlan> _defaultDays(String weekKey) {
   });
 }
 
+List<WeeklyTodo> _defaultMits(String dateKey) {
+  return List.generate(3, (index) {
+    return WeeklyTodo(id: _mitId(dateKey, index));
+  });
+}
+
+List<WeeklyTodo> _defaultGoals() {
+  return List.generate(5, (index) => WeeklyTodo(id: _goalId(index)));
+}
+
 List<MatrixQuadrant> _defaultMatrix() {
   return [
     MatrixQuadrant(label: 'Urgent + Important'),
@@ -186,4 +221,19 @@ String _dateKey(DateTime date) {
   final month = date.month.toString().padLeft(2, '0');
   final day = date.day.toString().padLeft(2, '0');
   return '${date.year}-$month-$day';
+}
+
+String _mitId(String dateKey, int index) {
+  return 'mit-$dateKey-$index';
+}
+
+String _goalId(int index) {
+  return 'goal-$index';
+}
+
+String _fallbackId(String? dateKey, int index) {
+  if (dateKey == null || dateKey.isEmpty) {
+    return 'mit-unknown-$index';
+  }
+  return _mitId(dateKey, index);
 }

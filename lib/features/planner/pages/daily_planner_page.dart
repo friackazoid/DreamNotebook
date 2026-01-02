@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/planner_sync_service.dart';
 import '../../../core/quick_note_helpers.dart';
 import '../../../core/storage/daily_plan_repository.dart';
+import '../../../core/storage/weekly_plan_repository.dart';
 import '../../../models/daily_plan.dart';
+import '../../../models/weekly_plan.dart';
 import '../../../widgets/handwriting_canvas.dart';
 
 class DailyPlannerPage extends StatefulWidget {
@@ -27,22 +30,29 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   static const _startHour = 6;
   static const _endHour = 22;
 
-  late final DailyPlanRepository _repository;
+  late final DailyPlanRepository _dailyRepository;
+  late final WeeklyPlanRepository _weeklyRepository;
+  late final PlannerSyncService _syncService;
   late final HandwritingController _scheduleController;
   late DateTime _currentDate;
   DailyPlan? _plan;
+  WeeklyPlan? _weeklyPlan;
+  List<WeeklyTodo> _weeklyTodosForDay = [];
   bool _loading = true;
   bool _isApplyingPlan = false;
   bool _hasQuickNote = false;
   Timer? _debounce;
 
-  late final List<TextEditingController> _todoControllers;
-  late final List<bool> _todoChecks;
 
   @override
   void initState() {
     super.initState();
-    _repository = widget.repository ?? SharedPrefsDailyPlanRepository();
+    _dailyRepository = widget.repository ?? SharedPrefsDailyPlanRepository();
+    _weeklyRepository = SharedPrefsWeeklyPlanRepository();
+    _syncService = PlannerSyncService(
+      dailyRepository: _dailyRepository,
+      weeklyRepository: _weeklyRepository,
+    );
     _scheduleController = HandwritingController();
     _scheduleController.addListener(_onScheduleChanged);
     _currentDate = _normalizeDate(
@@ -50,8 +60,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
           _parseDateKey(widget.initialDateKey) ??
           DateTime.now(),
     );
-    _todoControllers = List.generate(10, (_) => TextEditingController());
-    _todoChecks = List.filled(10, false);
     _loadPlanForDate(_currentDate);
   }
 
@@ -69,9 +77,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   @override
   void dispose() {
     _debounce?.cancel();
-    for (final controller in _todoControllers) {
-      controller.dispose();
-    }
     _scheduleController.removeListener(_onScheduleChanged);
     _scheduleController.dispose();
     super.dispose();
@@ -105,25 +110,28 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
                       controller: _scheduleController,
                     ),
                     const SizedBox(height: 16),
-                    _TodoSection(
-                      controllers: _todoControllers,
-                      checks: _todoChecks,
-                      onToggle: _onTodoToggled,
-                      onChanged: _onTodoChanged,
-                    ),
-                  ],
+                _WeeklyTodoSection(
+                  weeklyTodos: _weeklyTodosForDay,
+                  mirrors: _plan?.weeklyTodos ?? {},
+                  onToggleParent: _onWeeklyParentToggled,
+                  onSubTaskChanged: _onWeeklySubTaskChanged,
+                  onSubTaskToggle: _onWeeklySubTaskToggled,
                 ),
-              ),
+              ],
+            ),
+          ),
             ],
           );
   }
 
   Future<void> _loadPlanForDate(DateTime date) async {
     setState(() => _loading = true);
-    final plan = await _repository.loadPlan(_dateKey(date));
-    _plan = plan;
+    final result = await _syncService.loadDailyWithWeekly(date);
+    _plan = result.dailyPlan;
+    _weeklyPlan = result.weeklyPlan;
+    _weeklyTodosForDay = result.weeklyTodosForDay;
     _isApplyingPlan = true;
-    _applyPlanToControllers(plan);
+    _applyPlanToControllers(result.dailyPlan);
     _isApplyingPlan = false;
     await _refreshQuickNoteIndicator();
     setState(() => _loading = false);
@@ -160,27 +168,7 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   }
 
   void _applyPlanToControllers(DailyPlan plan) {
-    for (var i = 0; i < _todoControllers.length; i++) {
-      final item = plan.todos[i];
-      _todoControllers[i].text = item.text;
-      _todoChecks[i] = item.done;
-    }
     _scheduleController.loadStrokes(plan.scheduleStrokes);
-  }
-
-  void _onTodoChanged(int index, String value) {
-    final plan = _plan;
-    if (plan == null) return;
-    plan.todos[index].text = value;
-    _scheduleAutoSave();
-  }
-
-  void _onTodoToggled(int index, bool value) {
-    final plan = _plan;
-    if (plan == null) return;
-    setState(() => _todoChecks[index] = value);
-    plan.todos[index].done = value;
-    _scheduleAutoSave();
   }
 
   void _onScheduleChanged() {
@@ -200,7 +188,61 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     plan.scheduleStrokes
       ..clear()
       ..addAll(_scheduleController.strokes);
-    await _repository.savePlan(plan);
+    await _syncService.saveDaily(plan);
+    final weeklyPlan = _weeklyPlan;
+    if (weeklyPlan != null) {
+      await _syncService.saveWeekly(weeklyPlan);
+    }
+  }
+
+  void _onWeeklyParentToggled(String todoId, bool value) {
+    final weeklyPlan = _weeklyPlan;
+    if (weeklyPlan == null) return;
+    for (final day in weeklyPlan.days) {
+      for (final todo in day.mits) {
+        if (todo.id == todoId) {
+          setState(() => todo.done = value);
+          _scheduleAutoSave();
+          return;
+        }
+      }
+    }
+  }
+
+  void _onWeeklySubTaskChanged(
+    String todoId,
+    int subTaskIndex,
+    String value,
+  ) {
+    final plan = _plan;
+    if (plan == null) return;
+    final mirror = plan.weeklyTodos.putIfAbsent(
+      todoId,
+      () => WeeklyTodoMirror(weeklyTodoId: todoId),
+    );
+    mirror.subTasks[subTaskIndex].text = value;
+    _scheduleAutoSave();
+  }
+
+  void _onWeeklySubTaskToggled(
+    String todoId,
+    int subTaskIndex,
+    bool value,
+  ) {
+    final plan = _plan;
+    if (plan == null) return;
+    final mirror = plan.weeklyTodos.putIfAbsent(
+      todoId,
+      () => WeeklyTodoMirror(weeklyTodoId: todoId),
+    );
+    mirror.subTasks[subTaskIndex].done = value;
+
+    // Sync rule B: if both subtasks are done, mark the weekly todo done.
+    // We do not auto-uncheck weekly todos when subtasks are incomplete.
+    if (mirror.subTasks.every((task) => task.done)) {
+      _onWeeklyParentToggled(todoId, true);
+    }
+    _scheduleAutoSave();
   }
 }
 
@@ -362,12 +404,14 @@ class _ScheduleSection extends StatelessWidget {
 
 class _TodoSection extends StatelessWidget {
   const _TodoSection({
+    required this.title,
     required this.controllers,
     required this.checks,
     required this.onToggle,
     required this.onChanged,
   });
 
+  final String title;
   final List<TextEditingController> controllers;
   final List<bool> checks;
   final void Function(int index, bool value) onToggle;
@@ -376,7 +420,7 @@ class _TodoSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
-      title: 'Tasks',
+      title: title,
       child: Column(
         children: List.generate(controllers.length, (index) {
           return _TodoRow(
@@ -386,6 +430,161 @@ class _TodoSection extends StatelessWidget {
             onChanged: (value) => onChanged(index, value),
           );
         }),
+      ),
+    );
+  }
+}
+
+class _WeeklyTodoSection extends StatelessWidget {
+  const _WeeklyTodoSection({
+    required this.weeklyTodos,
+    required this.mirrors,
+    required this.onToggleParent,
+    required this.onSubTaskChanged,
+    required this.onSubTaskToggle,
+  });
+
+  final List<WeeklyTodo> weeklyTodos;
+  final Map<String, WeeklyTodoMirror> mirrors;
+  final void Function(String todoId, bool value) onToggleParent;
+  final void Function(String todoId, int index, String value) onSubTaskChanged;
+  final void Function(String todoId, int index, bool value) onSubTaskToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (weeklyTodos.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return _SectionCard(
+      title: 'From Weekly Plan',
+      child: Column(
+        children: weeklyTodos.map((todo) {
+          final mirror = mirrors[todo.id] ??
+              WeeklyTodoMirror(weeklyTodoId: todo.id);
+          return _WeeklyTodoBlock(
+            key: ValueKey(todo.id),
+            todo: todo,
+            mirror: mirror,
+            onToggleParent: (value) => onToggleParent(todo.id, value),
+            onSubTaskChanged: onSubTaskChanged,
+            onSubTaskToggle: onSubTaskToggle,
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _WeeklyTodoBlock extends StatelessWidget {
+  const _WeeklyTodoBlock({
+    super.key,
+    required this.todo,
+    required this.mirror,
+    required this.onToggleParent,
+    required this.onSubTaskChanged,
+    required this.onSubTaskToggle,
+  });
+
+  final WeeklyTodo todo;
+  final WeeklyTodoMirror mirror;
+  final ValueChanged<bool> onToggleParent;
+  final void Function(String todoId, int index, String value) onSubTaskChanged;
+  final void Function(String todoId, int index, bool value) onSubTaskToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: theme.dividerColor),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Checkbox(
+                value: todo.done,
+                onChanged: (value) => onToggleParent(value ?? false),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  todo.text,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ...List.generate(2, (index) {
+            final subTask = mirror.subTasks[index];
+            return _SubTaskRow(
+              key: ValueKey('${todo.id}-$index'),
+              checked: subTask.done,
+              text: subTask.text,
+              onToggle: (value) => onSubTaskToggle(todo.id, index, value),
+              onChanged: (value) => onSubTaskChanged(todo.id, index, value),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubTaskRow extends StatelessWidget {
+  const _SubTaskRow({
+    super.key,
+    required this.checked,
+    required this.text,
+    required this.onToggle,
+    required this.onChanged,
+  });
+
+  final bool checked;
+  final String text;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: theme.dividerColor),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      margin: const EdgeInsets.only(left: 28),
+      child: Row(
+        children: [
+          Checkbox(
+            value: checked,
+            onChanged: (value) => onToggle(value ?? false),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: TextFormField(
+              maxLines: 1,
+              initialValue: text,
+              style: theme.textTheme.bodySmall,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+              ),
+              onChanged: onChanged,
+            ),
+          ),
+        ],
       ),
     );
   }
