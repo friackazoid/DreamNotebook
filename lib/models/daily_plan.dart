@@ -25,7 +25,6 @@ class DailyPlan {
   DailyPlan({
     required this.dateKey,
     List<DailyTaskItem>? todos,
-    this.notes = '',
     Map<int, String>? hourlyNotes,
     List<Stroke>? scheduleStrokes,
   })  : todos = todos ?? List.generate(10, (_) => DailyTaskItem()),
@@ -38,7 +37,6 @@ class DailyPlan {
 
   final String dateKey;
   final List<DailyTaskItem> todos;
-  String notes;
   final Map<int, String> hourlyNotes;
   final List<Stroke> scheduleStrokes;
 
@@ -67,7 +65,6 @@ class DailyPlan {
     return DailyPlan(
       dateKey: json['dateKey'] as String? ?? '',
       todos: todos,
-      notes: json['notes'] as String? ?? '',
       hourlyNotes: hourly,
       scheduleStrokes:
           strokesJson.map((item) => Stroke.fromJson(item)).toList(),
@@ -78,7 +75,6 @@ class DailyPlan {
     return {
       'dateKey': dateKey,
       'todos': todos.map((item) => item.toJson()).toList(),
-      'notes': notes,
       'hourlyNotes': hourlyNotes.map(
         (key, value) => MapEntry(key.toString(), value),
       ),

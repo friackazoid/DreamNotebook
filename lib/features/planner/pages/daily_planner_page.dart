@@ -36,7 +36,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
 
   late final List<TextEditingController> _todoControllers;
   late final List<bool> _todoChecks;
-  late final TextEditingController _notesController;
 
   @override
   void initState() {
@@ -51,7 +50,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     );
     _todoControllers = List.generate(10, (_) => TextEditingController());
     _todoChecks = List.filled(10, false);
-    _notesController = TextEditingController();
     _loadPlanForDate(_currentDate);
   }
 
@@ -72,7 +70,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     for (final controller in _todoControllers) {
       controller.dispose();
     }
-    _notesController.dispose();
     _scheduleController.removeListener(_onScheduleChanged);
     _scheduleController.dispose();
     super.dispose();
@@ -107,11 +104,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
                   checks: _todoChecks,
                   onToggle: _onTodoToggled,
                   onChanged: _onTodoChanged,
-                ),
-                const SizedBox(height: 16),
-                _NotesSection(
-                  controller: _notesController,
-                  onChanged: _onNotesChanged,
                 ),
               ],
             ),
@@ -152,7 +144,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
       _todoControllers[i].text = item.text;
       _todoChecks[i] = item.done;
     }
-    _notesController.text = plan.notes;
     _scheduleController.loadStrokes(plan.scheduleStrokes);
   }
 
@@ -168,13 +159,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     if (plan == null) return;
     setState(() => _todoChecks[index] = value);
     plan.todos[index].done = value;
-    _scheduleAutoSave();
-  }
-
-  void _onNotesChanged(String value) {
-    final plan = _plan;
-    if (plan == null) return;
-    plan.notes = value;
     _scheduleAutoSave();
   }
 
@@ -371,33 +355,6 @@ class _TodoSection extends StatelessWidget {
             onChanged: (value) => onChanged(index, value),
           );
         }),
-      ),
-    );
-  }
-}
-
-class _NotesSection extends StatelessWidget {
-  const _NotesSection({
-    required this.controller,
-    required this.onChanged,
-  });
-
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return _SectionCard(
-      title: 'Notes',
-      child: TextField(
-        controller: controller,
-        maxLines: null,
-        minLines: 6,
-        decoration: const InputDecoration(
-          border: OutlineInputBorder(),
-          isDense: true,
-        ),
-        onChanged: onChanged,
       ),
     );
   }
