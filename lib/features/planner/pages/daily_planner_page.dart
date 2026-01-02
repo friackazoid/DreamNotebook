@@ -261,7 +261,7 @@ class _ScheduleSection extends StatelessWidget {
     const rowHeight = 56.0;
     const labelWidth = 64.0;
     return _SectionCard(
-      title: 'Schedule',
+      title: '',
       child: Column(
         children: [
           AnimatedBuilder(
@@ -417,8 +417,10 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
+            if (title.isNotEmpty) ...[
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+            ],
             child,
           ],
         ),
