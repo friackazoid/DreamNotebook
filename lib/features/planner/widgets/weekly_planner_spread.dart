@@ -8,11 +8,15 @@ class WeeklyPlannerSpread extends StatefulWidget {
     required this.initialPlan,
     this.onChanged,
     this.onDaySelected,
+    this.onDayNoteSelected,
+    this.dayKeysWithNotes = const {},
   });
 
   final WeeklyPlan initialPlan;
   final ValueChanged<WeeklyPlan>? onChanged;
   final ValueChanged<DateTime>? onDaySelected;
+  final ValueChanged<DateTime>? onDayNoteSelected;
+  final Set<String> dayKeysWithNotes;
 
   @override
   State<WeeklyPlannerSpread> createState() => _WeeklyPlannerSpreadState();
@@ -133,6 +137,10 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
                   onTap: widget.onDaySelected == null
                       ? null
                       : () => widget.onDaySelected!(_parseDateKey(day.dateKey)),
+                  hasQuickNote: widget.dayKeysWithNotes.contains(day.dateKey),
+                  onQuickNoteTap: widget.onDayNoteSelected == null
+                      ? null
+                      : () => widget.onDayNoteSelected!(_parseDateKey(day.dateKey)),
                   dayIndex: index,
                   mitControllers: _mitControllers[index],
                   mitChecks: _mitChecks[index],
@@ -258,6 +266,8 @@ class _DaySection extends StatelessWidget {
     required this.dayLabel,
     required this.dateLabel,
     this.onTap,
+    this.onQuickNoteTap,
+    this.hasQuickNote = false,
     required this.dayIndex,
     required this.mitControllers,
     required this.mitChecks,
@@ -268,6 +278,8 @@ class _DaySection extends StatelessWidget {
   final String dayLabel;
   final String dateLabel;
   final VoidCallback? onTap;
+  final VoidCallback? onQuickNoteTap;
+  final bool hasQuickNote;
   final int dayIndex;
   final List<TextEditingController> mitControllers;
   final List<bool> mitChecks;
@@ -298,6 +310,17 @@ class _DaySection extends StatelessWidget {
                   color: theme.hintColor,
                 ),
               ),
+              const Spacer(),
+              if (hasQuickNote && onQuickNoteTap != null)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onQuickNoteTap,
+                  child: Icon(
+                    Icons.sticky_note_2_outlined,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
             ],
           ),
         ),

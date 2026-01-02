@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/quick_note_helpers.dart';
 import '../../../core/storage/daily_plan_repository.dart';
 import '../../../models/daily_plan.dart';
 import '../../../widgets/handwriting_canvas.dart';
@@ -32,6 +33,7 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   DailyPlan? _plan;
   bool _loading = true;
   bool _isApplyingPlan = false;
+  bool _hasQuickNote = false;
   Timer? _debounce;
 
   late final List<TextEditingController> _todoControllers;
@@ -82,31 +84,37 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   Widget build(BuildContext context) {
     return _loading
         ? const Center(child: CircularProgressIndicator())
-        : SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _Header(
-                  formattedDate: _formatDate(_currentDate),
-                  onPrevious: () => _changeDay(-1),
-                  onNext: () => _changeDay(1),
-                  onToday: _isToday(_currentDate) ? null : _goToToday,
+        : Stack(
+            children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _Header(
+                      formattedDate: _formatDate(_currentDate),
+                      onPrevious: () => _changeDay(-1),
+                      onNext: () => _changeDay(1),
+                      onToday: _isToday(_currentDate) ? null : _goToToday,
+                      hasQuickNote: _hasQuickNote,
+                      onQuickNoteTap: _openQuickNoteForCurrentDay,
+                    ),
+                    const SizedBox(height: 16),
+                    _ScheduleSection(
+                      hours: _hours,
+                      controller: _scheduleController,
+                    ),
+                    const SizedBox(height: 16),
+                    _TodoSection(
+                      controllers: _todoControllers,
+                      checks: _todoChecks,
+                      onToggle: _onTodoToggled,
+                      onChanged: _onTodoChanged,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                _ScheduleSection(
-                  hours: _hours,
-                  controller: _scheduleController,
-                ),
-                const SizedBox(height: 16),
-                _TodoSection(
-                  controllers: _todoControllers,
-                  checks: _todoChecks,
-                  onToggle: _onTodoToggled,
-                  onChanged: _onTodoChanged,
-                ),
-              ],
-            ),
+              ),
+            ],
           );
   }
 
@@ -117,6 +125,7 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     _isApplyingPlan = true;
     _applyPlanToControllers(plan);
     _isApplyingPlan = false;
+    await _refreshQuickNoteIndicator();
     setState(() => _loading = false);
   }
 
@@ -136,6 +145,18 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     await _saveCurrentPlan();
     _currentDate = _normalizeDate(DateTime.now());
     await _loadPlanForDate(_currentDate);
+  }
+
+  Future<void> _openQuickNoteForCurrentDay() async {
+    await _saveCurrentPlan();
+    await openQuickNoteForDay(context, _currentDate);
+    await _refreshQuickNoteIndicator();
+  }
+
+  Future<void> _refreshQuickNoteIndicator() async {
+    _hasQuickNote = await quickNoteRepository.hasDayNote(_dateKey(_currentDate));
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _applyPlanToControllers(DailyPlan plan) {
@@ -189,12 +210,16 @@ class _Header extends StatelessWidget {
     required this.onPrevious,
     required this.onNext,
     this.onToday,
+    this.onQuickNoteTap,
+    this.hasQuickNote = false,
   });
 
   final String formattedDate;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final VoidCallback? onToday;
+  final VoidCallback? onQuickNoteTap;
+  final bool hasQuickNote;
 
   @override
   Widget build(BuildContext context) {
@@ -215,6 +240,12 @@ class _Header extends StatelessWidget {
             ),
           ),
         ),
+        if (hasQuickNote && onQuickNoteTap != null)
+          IconButton(
+            onPressed: onQuickNoteTap,
+            icon: const Icon(Icons.sticky_note_2_outlined),
+            tooltip: 'Open quick note',
+          ),
         IconButton(
           onPressed: onNext,
           icon: const Icon(Icons.chevron_right),

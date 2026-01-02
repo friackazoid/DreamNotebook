@@ -38,6 +38,11 @@ lib/
     notebook_background.dart
     section_card.dart
     urgent_important_matrix.dart
+
+## Quick Notes
+- Notes are stored as JSON files under `quick_notes/` in the app documents directory.
+- `quick_notes/index.json` maps day/week/month keys to note IDs.
+- Empty notes are deleted on close to keep the index clean.
   main.dart
 ```
 

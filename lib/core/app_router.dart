@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../pages/home_shell_page.dart';
 
-enum AppSection { daily, weekly, monthly, collections, drawing }
+enum AppSection { daily, weekly, monthly, collections, quickNote }
 
 class AppRoutePath {
   const AppRoutePath(
@@ -34,10 +34,10 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
           AppSection.monthly,
           month: _parseMonthKey(uri.queryParameters['month']),
         );
+      case '/quick-note':
+        return const AppRoutePath(AppSection.quickNote);
       case '/collections':
         return const AppRoutePath(AppSection.collections);
-      case '/drawing':
-        return const AppRoutePath(AppSection.drawing);
       case '/daily':
       default:
         return AppRoutePath(
@@ -53,7 +53,7 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
       AppSection.weekly => _weeklyLocation(configuration.weekStart),
       AppSection.monthly => _monthlyLocation(configuration.month),
       AppSection.collections => '/collections',
-      AppSection.drawing => '/drawing',
+      AppSection.quickNote => '/quick-note',
       AppSection.daily => _dailyLocation(configuration.dailyDate),
     };
     return RouteInformation(location: location);

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/app_router.dart';
+import '../../../core/quick_note_helpers.dart';
 import '../../../core/storage/monthly_plan_repository.dart';
 import '../../../models/monthly_plan.dart';
 import '../widgets/monthly_planner_spread.dart';
@@ -27,6 +28,8 @@ class _MonthlyPlannerPageState extends State<MonthlyPlannerPage> {
   MonthlyPlan? _plan;
   bool _loading = true;
   Timer? _debounce;
+  bool _hasMonthQuickNote = false;
+  Set<String> _dayQuickNotes = {};
 
   @override
   void initState() {
@@ -65,14 +68,24 @@ class _MonthlyPlannerPageState extends State<MonthlyPlannerPage> {
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : MonthlyPlannerSpread(
-                key: ValueKey(_plan!.monthKey),
-                initialPlan: _plan!,
-                onChanged: _onPlanChanged,
-                onPreviousMonth: () => _changeMonth(_prevMonth(_currentMonth)),
-                onNextMonth: () => _changeMonth(_nextMonth(_currentMonth)),
-                onThisMonth: _isThisMonth(_currentMonth) ? null : _goToThisMonth,
-                onDaySelected: _openDaily,
+            : Stack(
+                children: [
+                  MonthlyPlannerSpread(
+                    key: ValueKey(_plan!.monthKey),
+                    initialPlan: _plan!,
+                    onChanged: _onPlanChanged,
+                    onPreviousMonth: () => _changeMonth(_prevMonth(_currentMonth)),
+                    onNextMonth: () => _changeMonth(_nextMonth(_currentMonth)),
+                    onThisMonth:
+                        _isThisMonth(_currentMonth) ? null : _goToThisMonth,
+                    onDaySelected: _openDaily,
+                    onDayNoteSelected: _openQuickNoteForDay,
+                    onMonthNoteTap:
+                        _hasMonthQuickNote ? _openQuickNoteForMonth : null,
+                    dayKeysWithNotes: _dayQuickNotes,
+                    hasMonthNote: _hasMonthQuickNote,
+                  ),
+                ],
               ),
       ),
     );
@@ -93,6 +106,7 @@ class _MonthlyPlannerPageState extends State<MonthlyPlannerPage> {
             month: _currentMonth.month,
           )
         : plan;
+    await _refreshQuickNotes();
     setState(() => _loading = false);
   }
 
@@ -130,11 +144,49 @@ class _MonthlyPlannerPageState extends State<MonthlyPlannerPage> {
     if (!mounted) return;
     routeToDaily(context, date);
   }
+
+  Future<void> _openQuickNoteForDay(DateTime date) async {
+    await _saveCurrentPlan();
+    await openQuickNoteForDay(context, date);
+    await _refreshQuickNotes();
+  }
+
+  Future<void> _openQuickNoteForMonth() async {
+    await _saveCurrentPlan();
+    await openQuickNoteForMonth(
+      context,
+      _currentMonth.year,
+      _currentMonth.month,
+    );
+    await _refreshQuickNotes();
+  }
+
+  Future<void> _refreshQuickNotes() async {
+    final monthKey = _monthKeyFrom(_currentMonth);
+    final hasMonth = await quickNoteRepository.hasMonthNote(monthKey);
+    final days = generateCalendarGrid(
+      year: _currentMonth.year,
+      month: _currentMonth.month,
+    );
+    final dayKeys = days.map((day) => _dateKey(day.date)).toSet();
+    final dayNotes = await quickNoteRepository.dayKeysWithNotes(dayKeys);
+    if (!mounted) return;
+    setState(() {
+      _hasMonthQuickNote = hasMonth;
+      _dayQuickNotes = dayNotes;
+    });
+  }
 }
 
 String _monthKeyFrom(DateTime date) {
   final month = date.month.toString().padLeft(2, '0');
   return '${date.year}-$month';
+}
+
+String _dateKey(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
 }
 
 DateTime _nextMonth(DateTime date) {

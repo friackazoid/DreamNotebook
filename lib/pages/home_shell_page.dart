@@ -5,7 +5,7 @@ import '../features/collections/pages/collections_page.dart';
 import '../features/planner/pages/daily_planner_page.dart';
 import '../features/planner/pages/monthly_planner_page.dart';
 import '../features/planner/pages/weekly_planner_page.dart';
-import 'drawing_page.dart';
+import 'quick_note_tab_page.dart';
 
 class HomeShellPage extends StatelessWidget {
   const HomeShellPage({
@@ -61,9 +61,9 @@ class HomeShellPage extends StatelessWidget {
                     label: Text('Collections'),
                   ),
                   NavigationRailDestination(
-                    icon: Icon(Icons.draw_outlined),
-                    selectedIcon: Icon(Icons.draw),
-                    label: Text('Draw'),
+                    icon: Icon(Icons.sticky_note_2_outlined),
+                    selectedIcon: Icon(Icons.sticky_note_2),
+                    label: Text('Quick Note'),
                   ),
                 ],
               ),
@@ -82,7 +82,7 @@ class HomeShellPage extends StatelessWidget {
       AppSection.weekly => 1,
       AppSection.monthly => 2,
       AppSection.collections => 3,
-      AppSection.drawing => 4,
+      AppSection.quickNote => 4,
     };
   }
 
@@ -91,7 +91,7 @@ class HomeShellPage extends StatelessWidget {
       1 => AppSection.weekly,
       2 => AppSection.monthly,
       3 => AppSection.collections,
-      4 => AppSection.drawing,
+      4 => AppSection.quickNote,
       _ => AppSection.daily,
     };
   }
@@ -102,7 +102,7 @@ class HomeShellPage extends StatelessWidget {
       AppSection.weekly => WeeklyPlannerPage(initialDate: weeklyDate),
       AppSection.monthly => MonthlyPlannerPage(initialDate: monthlyDate),
       AppSection.collections => const CollectionsPage(),
-      AppSection.drawing => const DrawingPage(),
+      AppSection.quickNote => const QuickNoteTabPage(),
     };
   }
 }

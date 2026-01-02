@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/app_router.dart';
+import '../../../core/quick_note_helpers.dart';
 import '../../../core/storage/weekly_plan_repository.dart';
 import '../../../models/weekly_plan.dart';
 import '../widgets/weekly_planner_spread.dart';
@@ -27,6 +28,8 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
   WeeklyPlan? _plan;
   bool _loading = true;
   Timer? _debounce;
+  bool _hasWeekQuickNote = false;
+  Set<String> _dayQuickNotes = {};
 
   @override
   void initState() {
@@ -61,24 +64,33 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : Column(
+            : Stack(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: _WeekHeader(
-                      label: _weekRangeLabel(_weekStart),
-                      onPrevious: () => _changeWeek(-7),
-                      onNext: () => _changeWeek(7),
-                      onThisWeek: _isThisWeek(_weekStart) ? null : _goToThisWeek,
-                    ),
-                  ),
-                  Expanded(
-                    child: WeeklyPlannerSpread(
-                      key: ValueKey(_plan!.weekKey),
-                      initialPlan: _plan!,
-                      onChanged: _onPlanChanged,
-                      onDaySelected: _openDaily,
-                    ),
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                        child: _WeekHeader(
+                          label: _weekRangeLabel(_weekStart),
+                          onPrevious: () => _changeWeek(-7),
+                          onNext: () => _changeWeek(7),
+                          onThisWeek:
+                              _isThisWeek(_weekStart) ? null : _goToThisWeek,
+                          hasNote: _hasWeekQuickNote,
+                          onNoteTap: _openQuickNoteForWeek,
+                        ),
+                      ),
+                      Expanded(
+                        child: WeeklyPlannerSpread(
+                          key: ValueKey(_plan!.weekKey),
+                          initialPlan: _plan!,
+                          onChanged: _onPlanChanged,
+                          onDaySelected: _openDaily,
+                          onDayNoteSelected: _openQuickNoteForDay,
+                          dayKeysWithNotes: _dayQuickNotes,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -91,6 +103,7 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
     final weekKey = _dateKey(_weekStart);
     final plan = await _repository.loadPlan(weekKey);
     _plan = plan.weekKey.isEmpty ? WeeklyPlan.empty(weekKey) : plan;
+    await _refreshQuickNotes();
     setState(() => _loading = false);
   }
 
@@ -134,6 +147,30 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
     if (!mounted) return;
     routeToDaily(context, date);
   }
+
+  Future<void> _openQuickNoteForDay(DateTime date) async {
+    await _saveCurrentPlan();
+    await openQuickNoteForDay(context, date);
+    await _refreshQuickNotes();
+  }
+
+  Future<void> _openQuickNoteForWeek() async {
+    await _saveCurrentPlan();
+    await openQuickNoteForWeek(context, _weekStart);
+    await _refreshQuickNotes();
+  }
+
+  Future<void> _refreshQuickNotes() async {
+    final weekKey = _dateKey(_weekStart);
+    final hasWeek = await quickNoteRepository.hasWeekNote(weekKey);
+    final dayKeys = _plan?.days.map((day) => day.dateKey).toSet() ?? {};
+    final dayNotes = await quickNoteRepository.dayKeysWithNotes(dayKeys);
+    if (!mounted) return;
+    setState(() {
+      _hasWeekQuickNote = hasWeek;
+      _dayQuickNotes = dayNotes;
+    });
+  }
 }
 
 class _WeekHeader extends StatelessWidget {
@@ -142,12 +179,16 @@ class _WeekHeader extends StatelessWidget {
     required this.onPrevious,
     required this.onNext,
     this.onThisWeek,
+    this.hasNote = false,
+    this.onNoteTap,
   });
 
   final String label;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final VoidCallback? onThisWeek;
+  final bool hasNote;
+  final VoidCallback? onNoteTap;
 
   @override
   Widget build(BuildContext context) {
@@ -178,6 +219,12 @@ class _WeekHeader extends StatelessWidget {
           OutlinedButton(
             onPressed: onThisWeek,
             child: const Text('This week'),
+          ),
+        if (hasNote)
+          IconButton(
+            onPressed: onNoteTap,
+            icon: const Icon(Icons.sticky_note_2_outlined),
+            tooltip: 'Open quick note',
           ),
       ],
     );

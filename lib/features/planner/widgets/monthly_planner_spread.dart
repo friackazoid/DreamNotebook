@@ -35,6 +35,10 @@ class MonthlyPlannerSpread extends StatefulWidget {
     this.onNextMonth,
     this.onThisMonth,
     this.onDaySelected,
+    this.onDayNoteSelected,
+    this.onMonthNoteTap,
+    this.dayKeysWithNotes = const {},
+    this.hasMonthNote = false,
   });
 
   final MonthlyPlan initialPlan;
@@ -43,6 +47,10 @@ class MonthlyPlannerSpread extends StatefulWidget {
   final VoidCallback? onNextMonth;
   final VoidCallback? onThisMonth;
   final ValueChanged<DateTime>? onDaySelected;
+  final ValueChanged<DateTime>? onDayNoteSelected;
+  final VoidCallback? onMonthNoteTap;
+  final Set<String> dayKeysWithNotes;
+  final bool hasMonthNote;
 
   @override
   State<MonthlyPlannerSpread> createState() => _MonthlyPlannerSpreadState();
@@ -127,6 +135,8 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
               onPrevious: widget.onPreviousMonth,
               onNext: widget.onNextMonth,
               onThisMonth: widget.onThisMonth,
+              hasNote: widget.hasMonthNote,
+              onNoteTap: widget.onMonthNoteTap,
             ),
             const SizedBox(height: 12),
             _WeekdayLabels(theme: theme),
@@ -137,6 +147,8 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
                 rows: rows,
                 today: DateTime.now(),
                 onDaySelected: widget.onDaySelected,
+                onDayNoteSelected: widget.onDayNoteSelected,
+                dayKeysWithNotes: widget.dayKeysWithNotes,
               ),
             ),
           ],
@@ -226,12 +238,16 @@ class _MonthHeader extends StatelessWidget {
     this.onPrevious,
     this.onNext,
     this.onThisMonth,
+    this.hasNote = false,
+    this.onNoteTap,
   });
 
   final String title;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
   final VoidCallback? onThisMonth;
+  final bool hasNote;
+  final VoidCallback? onNoteTap;
 
   @override
   Widget build(BuildContext context) {
@@ -258,6 +274,13 @@ class _MonthHeader extends StatelessWidget {
               onPressed: onThisMonth,
               child: const Text('This month'),
             ),
+          ),
+        if (hasNote)
+          IconButton(
+            onPressed: onNoteTap,
+            icon: const Icon(Icons.sticky_note_2_outlined),
+            tooltip: 'Open quick note',
+            visualDensity: VisualDensity.compact,
           ),
         IconButton(
           icon: const Icon(Icons.chevron_right),
@@ -310,12 +333,16 @@ class _CalendarGrid extends StatelessWidget {
     required this.rows,
     required this.today,
     this.onDaySelected,
+    this.onDayNoteSelected,
+    this.dayKeysWithNotes = const {},
   });
 
   final List<CalendarDay> days;
   final int rows;
   final DateTime today;
   final ValueChanged<DateTime>? onDaySelected;
+  final ValueChanged<DateTime>? onDayNoteSelected;
+  final Set<String> dayKeysWithNotes;
 
   @override
   Widget build(BuildContext context) {
@@ -334,6 +361,8 @@ class _CalendarGrid extends StatelessWidget {
                       day.date.month == today.month &&
                       day.date.day == today.day &&
                       day.inCurrentMonth;
+                  final dayKey = _dateKey(day.date);
+                  final hasNote = dayKeysWithNotes.contains(dayKey);
                   return Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -345,6 +374,10 @@ class _CalendarGrid extends StatelessWidget {
                         onTap: onDaySelected == null
                             ? null
                             : () => onDaySelected!(day.date),
+                        hasNote: hasNote,
+                        onNoteTap: onDayNoteSelected == null
+                            ? null
+                            : () => onDayNoteSelected!(day.date),
                       ),
                     ),
                   );
@@ -363,11 +396,15 @@ class _CalendarCell extends StatelessWidget {
     required this.day,
     required this.isToday,
     this.onTap,
+    this.onNoteTap,
+    this.hasNote = false,
   });
 
   final CalendarDay day;
   final bool isToday;
   final VoidCallback? onTap;
+  final VoidCallback? onNoteTap;
+  final bool hasNote;
 
   @override
   Widget build(BuildContext context) {
@@ -385,18 +422,36 @@ class _CalendarCell extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
               )
             : null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            Text(
-              '${day.date.day}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: dayColor,
-                fontWeight: FontWeight.w600,
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${day.date.day}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: dayColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Expanded(child: SizedBox()),
+              ],
             ),
-            const SizedBox(height: 4),
-            const Expanded(child: SizedBox()),
+            if (hasNote && onNoteTap != null)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onNoteTap,
+                  child: Icon(
+                    Icons.sticky_note_2_outlined,
+                    size: 14,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -592,3 +647,9 @@ const List<String> _monthNames = [
   'November',
   'December',
 ];
+
+String _dateKey(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
+}
