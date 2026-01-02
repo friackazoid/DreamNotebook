@@ -22,7 +22,6 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
   late final List<List<bool>> _mitChecks;
   late final List<TextEditingController> _goalControllers;
   late final List<bool> _goalChecks;
-  late final TextEditingController _notesController;
   late final List<List<TextEditingController>> _matrixControllers;
 
   @override
@@ -52,7 +51,6 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
       _plan.weeklyGoals.length,
       (index) => _plan.weeklyGoals[index].done,
     );
-    _notesController = TextEditingController(text: _plan.notes);
     _matrixControllers = List.generate(
       _plan.matrix.length,
       (quadIndex) => List.generate(
@@ -73,7 +71,6 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
     for (final controller in _goalControllers) {
       controller.dispose();
     }
-    _notesController.dispose();
     for (final quadControllers in _matrixControllers) {
       for (final controller in quadControllers) {
         controller.dispose();
@@ -164,15 +161,6 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
                   onChanged: _onChangeGoal,
                 ),
                 const SizedBox(height: 16),
-                _SectionTitle(title: 'Notes'),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: _NotesField(
-                    controller: _notesController,
-                    onChanged: _onChangeNotes,
-                  ),
-                ),
-                const SizedBox(height: 16),
                 _SectionTitle(title: 'Urgent / Important'),
                 const SizedBox(height: 8),
                 SizedBox(
@@ -214,11 +202,6 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
 
   void _onChangeGoal(int index, String value) {
     _plan.weeklyGoals[index].text = value;
-    widget.onChanged?.call(_plan);
-  }
-
-  void _onChangeNotes(String value) {
-    _plan.notes = value;
     widget.onChanged?.call(_plan);
   }
 
@@ -428,37 +411,6 @@ class _GoalsSection extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _NotesField extends StatelessWidget {
-  const _NotesField({
-    required this.controller,
-    required this.onChanged,
-  });
-
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.dividerColor),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      padding: const EdgeInsets.all(8),
-      child: TextField(
-        controller: controller,
-        maxLines: null,
-        expands: true,
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-        ),
-        onChanged: onChanged,
       ),
     );
   }

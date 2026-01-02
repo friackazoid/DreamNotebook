@@ -92,7 +92,6 @@ class WeeklyPlan {
     required this.weekKey,
     List<DayPlan>? days,
     List<TaskLine>? weeklyGoals,
-    this.notes = '',
     List<MatrixQuadrant>? matrix,
   })  : days = days ?? _defaultDays(weekKey),
         weeklyGoals = weeklyGoals ?? List.generate(5, (_) => TaskLine()),
@@ -111,7 +110,6 @@ class WeeklyPlan {
   final String weekKey;
   final List<DayPlan> days;
   final List<TaskLine> weeklyGoals;
-  String notes;
   final List<MatrixQuadrant> matrix;
 
   factory WeeklyPlan.empty(String weekKey) {
@@ -139,7 +137,6 @@ class WeeklyPlan {
             ? TaskLine.fromJson(goalsJson[index])
             : TaskLine(),
       ),
-      notes: json['notes'] as String? ?? '',
       matrix: List.generate(
         4,
         (index) => index < matrixJson.length
@@ -154,7 +151,6 @@ class WeeklyPlan {
       'weekKey': weekKey,
       'days': days.map((day) => day.toJson()).toList(),
       'weeklyGoals': weeklyGoals.map((goal) => goal.toJson()).toList(),
-      'notes': notes,
       'matrix': matrix.map((quad) => quad.toJson()).toList(),
     };
   }
