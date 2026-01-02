@@ -1,37 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../../models/monthly_plan.dart';
+
 class CalendarDay {
   CalendarDay({required this.date, required this.inCurrentMonth});
 
   final DateTime date;
   final bool inCurrentMonth;
-}
-
-class MonthlyPlan {
-  MonthlyPlan({
-    required this.year,
-    required this.month,
-    List<String>? priorities,
-    this.habitName = '',
-    List<bool>? habitChecks,
-    this.notes = '',
-  })  : priorities = priorities ?? List.filled(5, ''),
-        habitChecks = habitChecks ?? List.filled(31, false) {
-    assert(this.priorities.length == 5, 'Monthly priorities need 5 lines.');
-    assert(this.habitChecks.length == 31, 'Habit checks need 31 days.');
-  }
-
-  factory MonthlyPlan.current() {
-    final now = DateTime.now();
-    return MonthlyPlan(year: now.year, month: now.month);
-  }
-
-  final int year;
-  final int month;
-  final List<String> priorities;
-  String habitName;
-  final List<bool> habitChecks;
-  String notes;
 }
 
 List<CalendarDay> generateCalendarGrid({
@@ -54,14 +29,18 @@ List<CalendarDay> generateCalendarGrid({
 class MonthlyPlannerSpread extends StatefulWidget {
   const MonthlyPlannerSpread({
     super.key,
-    this.initialPlan,
+    required this.initialPlan,
+    this.onChanged,
     this.onPreviousMonth,
     this.onNextMonth,
+    this.onThisMonth,
   });
 
-  final MonthlyPlan? initialPlan;
+  final MonthlyPlan initialPlan;
+  final ValueChanged<MonthlyPlan>? onChanged;
   final VoidCallback? onPreviousMonth;
   final VoidCallback? onNextMonth;
+  final VoidCallback? onThisMonth;
 
   @override
   State<MonthlyPlannerSpread> createState() => _MonthlyPlannerSpreadState();
@@ -77,12 +56,15 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
   @override
   void initState() {
     super.initState();
-    _plan = widget.initialPlan ?? MonthlyPlan.current();
+    _plan = widget.initialPlan;
     _priorityControllers = List.generate(
       _plan.priorities.length,
-      (index) => TextEditingController(text: _plan.priorities[index]),
+      (index) => TextEditingController(text: _plan.priorities[index].text),
     );
     _priorityChecks = List<bool>.filled(_plan.priorities.length, false);
+    for (var i = 0; i < _plan.priorities.length; i++) {
+      _priorityChecks[i] = _plan.priorities[i].done;
+    }
     _habitNameController = TextEditingController(text: _plan.habitName);
     _notesController = TextEditingController(text: _plan.notes);
   }
@@ -145,6 +127,7 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
               title: '${_monthNames[_plan.month - 1]} ${_plan.year}',
               onPrevious: widget.onPreviousMonth,
               onNext: widget.onNextMonth,
+              onThisMonth: widget.onThisMonth,
             ),
             const SizedBox(height: 12),
             _WeekdayLabels(theme: theme),
@@ -204,30 +187,31 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
   void _onTogglePriority(int index, bool value) {
     setState(() {
       _priorityChecks[index] = value;
-      // TODO: Wire priority completion to persistence/state management.
+      _plan.priorities[index].done = value;
     });
+    widget.onChanged?.call(_plan);
   }
 
   void _onChangePriority(int index, String value) {
-    _plan.priorities[index] = value;
-    // TODO: Wire priority text to persistence/state management.
+    _plan.priorities[index].text = value;
+    widget.onChanged?.call(_plan);
   }
 
   void _onToggleHabitDay(int index, bool value) {
     setState(() {
       _plan.habitChecks[index] = value;
-      // TODO: Wire habit tracking to persistence/state management.
     });
+    widget.onChanged?.call(_plan);
   }
 
   void _onChangeHabitName(String value) {
     _plan.habitName = value;
-    // TODO: Wire habit name to persistence/state management.
+    widget.onChanged?.call(_plan);
   }
 
   void _onChangeNotes(String value) {
     _plan.notes = value;
-    // TODO: Wire notes to persistence/state management.
+    widget.onChanged?.call(_plan);
   }
 }
 
@@ -255,11 +239,13 @@ class _MonthHeader extends StatelessWidget {
     required this.title,
     this.onPrevious,
     this.onNext,
+    this.onThisMonth,
   });
 
   final String title;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
+  final VoidCallback? onThisMonth;
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +265,14 @@ class _MonthHeader extends StatelessWidget {
           tooltip: 'Previous month',
           visualDensity: VisualDensity.compact,
         ),
+        if (onThisMonth != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: OutlinedButton(
+              onPressed: onThisMonth,
+              child: const Text('This month'),
+            ),
+          ),
         IconButton(
           icon: const Icon(Icons.chevron_right),
           onPressed: onNext,
