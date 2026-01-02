@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/app_router.dart';
 import '../../../core/storage/monthly_plan_repository.dart';
 import '../../../models/monthly_plan.dart';
 import '../widgets/monthly_planner_spread.dart';
@@ -10,9 +11,11 @@ class MonthlyPlannerPage extends StatefulWidget {
   const MonthlyPlannerPage({
     super.key,
     this.repository,
+    this.initialDate,
   });
 
   final MonthlyPlanRepository? repository;
+  final DateTime? initialDate;
 
   @override
   State<MonthlyPlannerPage> createState() => _MonthlyPlannerPageState();
@@ -29,8 +32,25 @@ class _MonthlyPlannerPageState extends State<MonthlyPlannerPage> {
   void initState() {
     super.initState();
     _repository = widget.repository ?? SharedPrefsMonthlyPlanRepository();
-    _currentMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+    final now = widget.initialDate ?? DateTime.now();
+    _currentMonth = DateTime(now.year, now.month, 1);
     _loadPlan();
+  }
+
+  @override
+  void didUpdateWidget(covariant MonthlyPlannerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialDate == null) return;
+    final incoming = DateTime(
+      widget.initialDate!.year,
+      widget.initialDate!.month,
+      1,
+    );
+    if (incoming.year == _currentMonth.year &&
+        incoming.month == _currentMonth.month) {
+      return;
+    }
+    _changeMonth(incoming);
   }
 
   @override
@@ -52,6 +72,7 @@ class _MonthlyPlannerPageState extends State<MonthlyPlannerPage> {
                 onPreviousMonth: () => _changeMonth(_prevMonth(_currentMonth)),
                 onNextMonth: () => _changeMonth(_nextMonth(_currentMonth)),
                 onThisMonth: _isThisMonth(_currentMonth) ? null : _goToThisMonth,
+                onDaySelected: _openDaily,
               ),
       ),
     );
@@ -102,6 +123,12 @@ class _MonthlyPlannerPageState extends State<MonthlyPlannerPage> {
     await _saveCurrentPlan();
     _currentMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
     await _loadPlan();
+  }
+
+  Future<void> _openDaily(DateTime date) async {
+    await _saveCurrentPlan();
+    if (!mounted) return;
+    routeToDaily(context, date);
   }
 }
 

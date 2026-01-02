@@ -7,10 +7,12 @@ class WeeklyPlannerSpread extends StatefulWidget {
     super.key,
     required this.initialPlan,
     this.onChanged,
+    this.onDaySelected,
   });
 
   final WeeklyPlan initialPlan;
   final ValueChanged<WeeklyPlan>? onChanged;
+  final ValueChanged<DateTime>? onDaySelected;
 
   @override
   State<WeeklyPlannerSpread> createState() => _WeeklyPlannerSpreadState();
@@ -128,6 +130,9 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
                 child: _DaySection(
                   dayLabel: _weekdayLabels[index],
                   dateLabel: _formatDateLabel(day.dateKey),
+                  onTap: widget.onDaySelected == null
+                      ? null
+                      : () => widget.onDaySelected!(_parseDateKey(day.dateKey)),
                   dayIndex: index,
                   mitControllers: _mitControllers[index],
                   mitChecks: _mitChecks[index],
@@ -252,6 +257,7 @@ class _DaySection extends StatelessWidget {
   const _DaySection({
     required this.dayLabel,
     required this.dateLabel,
+    this.onTap,
     required this.dayIndex,
     required this.mitControllers,
     required this.mitChecks,
@@ -261,6 +267,7 @@ class _DaySection extends StatelessWidget {
 
   final String dayLabel;
   final String dateLabel;
+  final VoidCallback? onTap;
   final int dayIndex;
   final List<TextEditingController> mitControllers;
   final List<bool> mitChecks;
@@ -273,22 +280,26 @@ class _DaySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              dayLabel,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Row(
+            children: [
+              Text(
+                dayLabel,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              dateLabel,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.hintColor,
+              const SizedBox(width: 8),
+              Text(
+                dateLabel,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.hintColor,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 6),
         Column(
@@ -482,6 +493,15 @@ String _formatDateLabel(String dateKey) {
   final day = parts[2];
   final month = parts[1];
   return '$day.$month';
+}
+
+DateTime _parseDateKey(String dateKey) {
+  final parts = dateKey.split('-');
+  if (parts.length != 3) return DateTime.now();
+  final year = int.tryParse(parts[0]) ?? DateTime.now().year;
+  final month = int.tryParse(parts[1]) ?? DateTime.now().month;
+  final day = int.tryParse(parts[2]) ?? DateTime.now().day;
+  return DateTime(year, month, day);
 }
 
 class _MatrixCell extends StatelessWidget {

@@ -10,9 +10,13 @@ class DailyPlannerPage extends StatefulWidget {
   const DailyPlannerPage({
     super.key,
     this.repository,
+    this.initialDate,
+    this.initialDateKey,
   });
 
   final DailyPlanRepository? repository;
+  final DateTime? initialDate;
+  final String? initialDateKey;
 
   @override
   State<DailyPlannerPage> createState() => _DailyPlannerPageState();
@@ -40,11 +44,26 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     _repository = widget.repository ?? SharedPrefsDailyPlanRepository();
     _scheduleController = HandwritingController();
     _scheduleController.addListener(_onScheduleChanged);
-    _currentDate = _normalizeDate(DateTime.now());
+    _currentDate = _normalizeDate(
+      widget.initialDate ??
+          _parseDateKey(widget.initialDateKey) ??
+          DateTime.now(),
+    );
     _todoControllers = List.generate(10, (_) => TextEditingController());
     _todoChecks = List.filled(10, false);
     _notesController = TextEditingController();
     _loadPlanForDate(_currentDate);
+  }
+
+  @override
+  void didUpdateWidget(covariant DailyPlannerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final incomingDate = widget.initialDate ??
+        _parseDateKey(widget.initialDateKey);
+    if (incomingDate == null) return;
+    final normalized = _normalizeDate(incomingDate);
+    if (normalized == _currentDate) return;
+    _changeToDate(normalized);
   }
 
   @override
@@ -112,6 +131,12 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   Future<void> _changeDay(int deltaDays) async {
     await _saveCurrentPlan();
     _currentDate = _normalizeDate(_currentDate.add(Duration(days: deltaDays)));
+    await _loadPlanForDate(_currentDate);
+  }
+
+  Future<void> _changeToDate(DateTime date) async {
+    await _saveCurrentPlan();
+    _currentDate = _normalizeDate(date);
     await _loadPlanForDate(_currentDate);
   }
 
@@ -529,6 +554,17 @@ String _dateKey(DateTime date) {
 
 DateTime _normalizeDate(DateTime date) {
   return DateTime(date.year, date.month, date.day);
+}
+
+DateTime? _parseDateKey(String? value) {
+  if (value == null || value.isEmpty) return null;
+  final parts = value.split('-');
+  if (parts.length != 3) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final day = int.tryParse(parts[2]);
+  if (year == null || month == null || day == null) return null;
+  return DateTime(year, month, day);
 }
 
 bool _isToday(DateTime date) {

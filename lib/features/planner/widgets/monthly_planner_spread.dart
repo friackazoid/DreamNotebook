@@ -34,6 +34,7 @@ class MonthlyPlannerSpread extends StatefulWidget {
     this.onPreviousMonth,
     this.onNextMonth,
     this.onThisMonth,
+    this.onDaySelected,
   });
 
   final MonthlyPlan initialPlan;
@@ -41,6 +42,7 @@ class MonthlyPlannerSpread extends StatefulWidget {
   final VoidCallback? onPreviousMonth;
   final VoidCallback? onNextMonth;
   final VoidCallback? onThisMonth;
+  final ValueChanged<DateTime>? onDaySelected;
 
   @override
   State<MonthlyPlannerSpread> createState() => _MonthlyPlannerSpreadState();
@@ -134,6 +136,7 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
                 days: days,
                 rows: rows,
                 today: DateTime.now(),
+                onDaySelected: widget.onDaySelected,
               ),
             ),
           ],
@@ -306,11 +309,13 @@ class _CalendarGrid extends StatelessWidget {
     required this.days,
     required this.rows,
     required this.today,
+    this.onDaySelected,
   });
 
   final List<CalendarDay> days;
   final int rows;
   final DateTime today;
+  final ValueChanged<DateTime>? onDaySelected;
 
   @override
   Widget build(BuildContext context) {
@@ -337,6 +342,9 @@ class _CalendarGrid extends StatelessWidget {
                       child: _CalendarCell(
                         day: day,
                         isToday: isToday,
+                        onTap: onDaySelected == null
+                            ? null
+                            : () => onDaySelected!(day.date),
                       ),
                     ),
                   );
@@ -354,37 +362,43 @@ class _CalendarCell extends StatelessWidget {
   const _CalendarCell({
     required this.day,
     required this.isToday,
+    this.onTap,
   });
 
   final CalendarDay day;
   final bool isToday;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dayColor =
         day.inCurrentMonth ? theme.textTheme.bodySmall?.color : theme.hintColor;
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: isToday
-          ? BoxDecoration(
-              border: Border.all(color: theme.colorScheme.primary),
-              borderRadius: BorderRadius.circular(6),
-            )
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${day.date.day}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: dayColor,
-              fontWeight: FontWeight.w600,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: isToday
+            ? BoxDecoration(
+                border: Border.all(color: theme.colorScheme.primary),
+                borderRadius: BorderRadius.circular(6),
+              )
+            : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${day.date.day}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: dayColor,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          const Expanded(child: SizedBox()),
-        ],
+            const SizedBox(height: 4),
+            const Expanded(child: SizedBox()),
+          ],
+        ),
       ),
     );
   }

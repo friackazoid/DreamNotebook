@@ -12,10 +12,16 @@ class HomeShellPage extends StatelessWidget {
     super.key,
     required this.section,
     required this.onSectionSelected,
+    this.dailyDate,
+    this.weeklyDate,
+    this.monthlyDate,
   });
 
   final AppSection section;
   final ValueChanged<AppSection> onSectionSelected;
+  final DateTime? dailyDate;
+  final DateTime? weeklyDate;
+  final DateTime? monthlyDate;
 
   @override
   Widget build(BuildContext context) {
@@ -92,9 +98,9 @@ class HomeShellPage extends StatelessWidget {
 
   Widget _sectionContent(AppSection section) {
     return switch (section) {
-      AppSection.daily => const DailyPlannerPage(),
-      AppSection.weekly => const WeeklyPlannerPage(),
-      AppSection.monthly => const MonthlyPlannerPage(),
+      AppSection.daily => DailyPlannerPage(initialDate: dailyDate),
+      AppSection.weekly => WeeklyPlannerPage(initialDate: weeklyDate),
+      AppSection.monthly => MonthlyPlannerPage(initialDate: monthlyDate),
       AppSection.collections => const CollectionsPage(),
       AppSection.drawing => const DrawingPage(),
     };

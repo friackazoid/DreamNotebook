@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/app_router.dart';
 import '../../../core/storage/weekly_plan_repository.dart';
 import '../../../models/weekly_plan.dart';
 import '../widgets/weekly_planner_spread.dart';
@@ -10,9 +11,11 @@ class WeeklyPlannerPage extends StatefulWidget {
   const WeeklyPlannerPage({
     super.key,
     this.repository,
+    this.initialDate,
   });
 
   final WeeklyPlanRepository? repository;
+  final DateTime? initialDate;
 
   @override
   State<WeeklyPlannerPage> createState() => _WeeklyPlannerPageState();
@@ -29,8 +32,21 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
   void initState() {
     super.initState();
     _repository = widget.repository ?? SharedPrefsWeeklyPlanRepository();
-    _weekStart = _startOfWeekMonday(DateTime.now());
+    _weekStart = _startOfWeekMonday(widget.initialDate ?? DateTime.now());
     _loadPlan();
+  }
+
+  @override
+  void didUpdateWidget(covariant WeeklyPlannerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialDate == null) return;
+    final incomingStart = _startOfWeekMonday(widget.initialDate!);
+    if (incomingStart.year == _weekStart.year &&
+        incomingStart.month == _weekStart.month &&
+        incomingStart.day == _weekStart.day) {
+      return;
+    }
+    _changeToWeek(incomingStart);
   }
 
   @override
@@ -61,6 +77,7 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
                       key: ValueKey(_plan!.weekKey),
                       initialPlan: _plan!,
                       onChanged: _onPlanChanged,
+                      onDaySelected: _openDaily,
                     ),
                   ),
                 ],
@@ -100,10 +117,22 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
     await _loadPlan();
   }
 
+  Future<void> _changeToWeek(DateTime start) async {
+    await _saveCurrentPlan();
+    _weekStart = _startOfWeekMonday(start);
+    await _loadPlan();
+  }
+
   Future<void> _goToThisWeek() async {
     await _saveCurrentPlan();
     _weekStart = _startOfWeekMonday(DateTime.now());
     await _loadPlan();
+  }
+
+  Future<void> _openDaily(DateTime date) async {
+    await _saveCurrentPlan();
+    if (!mounted) return;
+    routeToDaily(context, date);
   }
 }
 

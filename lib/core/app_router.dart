@@ -5,39 +5,56 @@ import '../pages/home_shell_page.dart';
 enum AppSection { daily, weekly, monthly, collections, drawing }
 
 class AppRoutePath {
-  const AppRoutePath(this.section);
+  const AppRoutePath(
+    this.section, {
+    this.dailyDate,
+    this.weekStart,
+    this.month,
+  });
 
   final AppSection section;
+  final DateTime? dailyDate;
+  final DateTime? weekStart;
+  final DateTime? month;
 }
 
 class AppRouteParser extends RouteInformationParser<AppRoutePath> {
   @override
   Future<AppRoutePath> parseRouteInformation(
       RouteInformation routeInformation) async {
-    final location = routeInformation.location ?? '/daily';
-    switch (location) {
+    final uri = Uri.parse(routeInformation.location ?? '/daily');
+    switch (uri.path) {
       case '/weekly':
-        return const AppRoutePath(AppSection.weekly);
+        return AppRoutePath(
+          AppSection.weekly,
+          weekStart: _parseDateKey(uri.queryParameters['start']),
+        );
       case '/monthly':
-        return const AppRoutePath(AppSection.monthly);
+        return AppRoutePath(
+          AppSection.monthly,
+          month: _parseMonthKey(uri.queryParameters['month']),
+        );
       case '/collections':
         return const AppRoutePath(AppSection.collections);
       case '/drawing':
         return const AppRoutePath(AppSection.drawing);
       case '/daily':
       default:
-        return const AppRoutePath(AppSection.daily);
+        return AppRoutePath(
+          AppSection.daily,
+          dailyDate: _parseDateKey(uri.queryParameters['date']),
+        );
     }
   }
 
   @override
   RouteInformation? restoreRouteInformation(AppRoutePath configuration) {
     final location = switch (configuration.section) {
-      AppSection.weekly => '/weekly',
-      AppSection.monthly => '/monthly',
+      AppSection.weekly => _weeklyLocation(configuration.weekStart),
+      AppSection.monthly => _monthlyLocation(configuration.month),
       AppSection.collections => '/collections',
       AppSection.drawing => '/drawing',
-      AppSection.daily => '/daily',
+      AppSection.daily => _dailyLocation(configuration.dailyDate),
     };
     return RouteInformation(location: location);
   }
@@ -46,6 +63,9 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
 class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     with ChangeNotifier, PopNavigatorRouterDelegateMixin<AppRoutePath> {
   AppSection _section = AppSection.daily;
+  DateTime? _dailyDate;
+  DateTime? _weeklyStart;
+  DateTime? _monthlyStart;
 
   @override
   GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -56,12 +76,38 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     notifyListeners();
   }
 
+  void routeToDaily(DateTime date) {
+    _dailyDate = _normalizeDate(date);
+    _section = AppSection.daily;
+    notifyListeners();
+  }
+
+  void routeToWeekly(DateTime anyDay) {
+    _weeklyStart = _startOfWeekMonday(anyDay);
+    _section = AppSection.weekly;
+    notifyListeners();
+  }
+
+  void routeToMonthly(DateTime anyDay) {
+    _monthlyStart = DateTime(anyDay.year, anyDay.month, 1);
+    _section = AppSection.monthly;
+    notifyListeners();
+  }
+
   @override
-  AppRoutePath get currentConfiguration => AppRoutePath(_section);
+  AppRoutePath get currentConfiguration => AppRoutePath(
+        _section,
+        dailyDate: _dailyDate,
+        weekStart: _weeklyStart,
+        month: _monthlyStart,
+      );
 
   @override
   Future<void> setNewRoutePath(AppRoutePath configuration) async {
     _section = configuration.section;
+    _dailyDate = configuration.dailyDate ?? _dailyDate;
+    _weeklyStart = configuration.weekStart ?? _weeklyStart;
+    _monthlyStart = configuration.month ?? _monthlyStart;
   }
 
   @override
@@ -73,6 +119,9 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
           child: HomeShellPage(
             section: _section,
             onSectionSelected: setSection,
+            dailyDate: _dailyDate,
+            weeklyDate: _weeklyStart,
+            monthlyDate: _monthlyStart,
           ),
         ),
       ],
@@ -87,4 +136,85 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
       },
     );
   }
+}
+
+void routeToDaily(BuildContext context, DateTime date) {
+  final delegate = Router.of(context).routerDelegate;
+  if (delegate is AppRouterDelegate) {
+    delegate.routeToDaily(date);
+  }
+}
+
+void routeToWeekly(BuildContext context, DateTime anyDay) {
+  final delegate = Router.of(context).routerDelegate;
+  if (delegate is AppRouterDelegate) {
+    delegate.routeToWeekly(anyDay);
+  }
+}
+
+void routeToMonthly(BuildContext context, DateTime anyDay) {
+  final delegate = Router.of(context).routerDelegate;
+  if (delegate is AppRouterDelegate) {
+    delegate.routeToMonthly(anyDay);
+  }
+}
+
+String _dailyLocation(DateTime? date) {
+  if (date == null) return '/daily';
+  final key = _dateKey(date);
+  return '/daily?date=$key';
+}
+
+String _weeklyLocation(DateTime? start) {
+  if (start == null) return '/weekly';
+  final key = _dateKey(_startOfWeekMonday(start));
+  return '/weekly?start=$key';
+}
+
+String _monthlyLocation(DateTime? month) {
+  if (month == null) return '/monthly';
+  final key = _monthKey(DateTime(month.year, month.month, 1));
+  return '/monthly?month=$key';
+}
+
+DateTime? _parseDateKey(String? value) {
+  if (value == null || value.isEmpty) return null;
+  final parts = value.split('-');
+  if (parts.length != 3) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final day = int.tryParse(parts[2]);
+  if (year == null || month == null || day == null) return null;
+  return DateTime(year, month, day);
+}
+
+DateTime? _parseMonthKey(String? value) {
+  if (value == null || value.isEmpty) return null;
+  final parts = value.split('-');
+  if (parts.length != 2) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  if (year == null || month == null) return null;
+  return DateTime(year, month, 1);
+}
+
+DateTime _normalizeDate(DateTime date) {
+  return DateTime(date.year, date.month, date.day);
+}
+
+DateTime _startOfWeekMonday(DateTime date) {
+  final normalized = _normalizeDate(date);
+  final diff = normalized.weekday - DateTime.monday;
+  return normalized.subtract(Duration(days: diff));
+}
+
+String _dateKey(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
+}
+
+String _monthKey(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  return '${date.year}-$month';
 }
