@@ -1,87 +1,243 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import '../../../core/state/notebook_state.dart';
-import '../../../models/planner_type.dart';
-import '../../../models/notebook_data.dart';
+import '../../../core/storage/daily_plan_repository.dart';
+import '../../../models/daily_plan.dart';
 import '../../../widgets/handwriting_canvas.dart';
-import '../../../widgets/section_card.dart';
-import '../../../widgets/urgent_important_matrix.dart';
-import '../widgets/planner_sections.dart';
 
 class DailyPlannerPage extends StatefulWidget {
-  const DailyPlannerPage({super.key});
+  const DailyPlannerPage({
+    super.key,
+    this.repository,
+  });
+
+  final DailyPlanRepository? repository;
 
   @override
   State<DailyPlannerPage> createState() => _DailyPlannerPageState();
 }
 
 class _DailyPlannerPageState extends State<DailyPlannerPage> {
+  static const _startHour = 6;
+  static const _endHour = 22;
+
+  late final DailyPlanRepository _repository;
   late final HandwritingController _scheduleController;
+  late DateTime _currentDate;
+  DailyPlan? _plan;
+  bool _loading = true;
+  bool _isApplyingPlan = false;
+  Timer? _debounce;
+
+  late final List<TextEditingController> _todoControllers;
+  late final List<bool> _todoChecks;
+  late final TextEditingController _notesController;
 
   @override
   void initState() {
     super.initState();
+    _repository = widget.repository ?? SharedPrefsDailyPlanRepository();
     _scheduleController = HandwritingController();
+    _scheduleController.addListener(_onScheduleChanged);
+    _currentDate = _normalizeDate(DateTime.now());
+    _todoControllers = List.generate(10, (_) => TextEditingController());
+    _todoChecks = List.filled(10, false);
+    _notesController = TextEditingController();
+    _loadPlanForDate(_currentDate);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    for (final controller in _todoControllers) {
+      controller.dispose();
+    }
+    _notesController.dispose();
+    _scheduleController.removeListener(_onScheduleChanged);
     _scheduleController.dispose();
     super.dispose();
   }
 
+  List<int> get _hours =>
+      List.generate(_endHour - _startHour + 1, (i) => _startHour + i);
+
   @override
   Widget build(BuildContext context) {
-    final state = AppStateScope.of(context);
-    return ValueListenableBuilder<NotebookData>(
-      valueListenable: state,
-      builder: (context, data, _) {
-        final daily = data.daily;
-        return PlannerPageLayout(
-          title: 'Daily Planner',
-          schedule: _HourlyHandwritingSchedule(
-            controller: _scheduleController,
-          ),
-          todo: TodoSection(
-            items: daily.todos,
-            onAddItem: (title) =>
-                state.addPlannerTodo(PlannerType.daily, title),
-            onToggleItem: (id) =>
-                state.togglePlannerTodo(PlannerType.daily, id),
-          ),
-          notes: NotesSection(
-            initialText: daily.notes,
-            onChanged: (text) =>
-                state.updatePlannerNotes(PlannerType.daily, text),
-          ),
-          extras: [
-            UrgentImportantMatrix(
-              values: daily.matrixNotes,
-              onChanged: state.updateMatrixNote,
+    return _loading
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Header(
+                  formattedDate: _formatDate(_currentDate),
+                  onPrevious: () => _changeDay(-1),
+                  onNext: () => _changeDay(1),
+                  onToday: _isToday(_currentDate) ? null : _goToToday,
+                ),
+                const SizedBox(height: 16),
+                _ScheduleSection(
+                  hours: _hours,
+                  controller: _scheduleController,
+                ),
+                const SizedBox(height: 16),
+                _TodoSection(
+                  controllers: _todoControllers,
+                  checks: _todoChecks,
+                  onToggle: _onTodoToggled,
+                  onChanged: _onTodoChanged,
+                ),
+                const SizedBox(height: 16),
+                _NotesSection(
+                  controller: _notesController,
+                  onChanged: _onNotesChanged,
+                ),
+              ],
             ),
-          ],
-        );
-      },
+          );
+  }
+
+  Future<void> _loadPlanForDate(DateTime date) async {
+    setState(() => _loading = true);
+    final plan = await _repository.loadPlan(_dateKey(date));
+    _plan = plan;
+    _isApplyingPlan = true;
+    _applyPlanToControllers(plan);
+    _isApplyingPlan = false;
+    setState(() => _loading = false);
+  }
+
+  Future<void> _changeDay(int deltaDays) async {
+    await _saveCurrentPlan();
+    _currentDate = _normalizeDate(_currentDate.add(Duration(days: deltaDays)));
+    await _loadPlanForDate(_currentDate);
+  }
+
+  Future<void> _goToToday() async {
+    await _saveCurrentPlan();
+    _currentDate = _normalizeDate(DateTime.now());
+    await _loadPlanForDate(_currentDate);
+  }
+
+  void _applyPlanToControllers(DailyPlan plan) {
+    for (var i = 0; i < _todoControllers.length; i++) {
+      final item = plan.todos[i];
+      _todoControllers[i].text = item.text;
+      _todoChecks[i] = item.done;
+    }
+    _notesController.text = plan.notes;
+    _scheduleController.loadStrokes(plan.scheduleStrokes);
+  }
+
+  void _onTodoChanged(int index, String value) {
+    final plan = _plan;
+    if (plan == null) return;
+    plan.todos[index].text = value;
+    _scheduleAutoSave();
+  }
+
+  void _onTodoToggled(int index, bool value) {
+    final plan = _plan;
+    if (plan == null) return;
+    setState(() => _todoChecks[index] = value);
+    plan.todos[index].done = value;
+    _scheduleAutoSave();
+  }
+
+  void _onNotesChanged(String value) {
+    final plan = _plan;
+    if (plan == null) return;
+    plan.notes = value;
+    _scheduleAutoSave();
+  }
+
+  void _onScheduleChanged() {
+    if (_isApplyingPlan) return;
+    _scheduleAutoSave();
+  }
+
+  void _scheduleAutoSave() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 650), _saveCurrentPlan);
+  }
+
+  Future<void> _saveCurrentPlan() async {
+    _debounce?.cancel();
+    final plan = _plan;
+    if (plan == null) return;
+    plan.scheduleStrokes
+      ..clear()
+      ..addAll(_scheduleController.strokes);
+    await _repository.savePlan(plan);
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.formattedDate,
+    required this.onPrevious,
+    required this.onNext,
+    this.onToday,
+  });
+
+  final String formattedDate;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+  final VoidCallback? onToday;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        IconButton(
+          onPressed: onPrevious,
+          icon: const Icon(Icons.chevron_left),
+          tooltip: 'Previous day',
+        ),
+        Expanded(
+          child: Text(
+            formattedDate,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: onNext,
+          icon: const Icon(Icons.chevron_right),
+          tooltip: 'Next day',
+        ),
+        const SizedBox(width: 8),
+        if (onToday != null)
+          OutlinedButton(
+            onPressed: onToday,
+            child: const Text('Today'),
+          ),
+      ],
     );
   }
 }
 
-class _HourlyHandwritingSchedule extends StatelessWidget {
-  const _HourlyHandwritingSchedule({required this.controller});
+class _ScheduleSection extends StatelessWidget {
+  const _ScheduleSection({
+    required this.hours,
+    required this.controller,
+  });
 
+  final List<int> hours;
   final HandwritingController controller;
 
   @override
   Widget build(BuildContext context) {
-    const startHour = 6;
-    const endHour = 23;
     const rowHeight = 56.0;
     const labelWidth = 64.0;
-    final hours = List.generate(endHour - startHour + 1, (i) => startHour + i);
-    return SectionCard(
-      title: 'Daily Schedule',
+    return _SectionCard(
+      title: 'Schedule',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AnimatedBuilder(
             animation: controller,
@@ -112,10 +268,7 @@ class _HourlyHandwritingSchedule extends StatelessWidget {
                   ),
                   const Spacer(),
                   OutlinedButton.icon(
-                    onPressed: () {
-                      controller.clear();
-                      // TODO: Persist daily schedule handwriting.
-                    },
+                    onPressed: () => controller.clear(),
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Clear'),
                   ),
@@ -167,6 +320,88 @@ class _HourlyHandwritingSchedule extends StatelessWidget {
   }
 }
 
+class _TodoSection extends StatelessWidget {
+  const _TodoSection({
+    required this.controllers,
+    required this.checks,
+    required this.onToggle,
+    required this.onChanged,
+  });
+
+  final List<TextEditingController> controllers;
+  final List<bool> checks;
+  final void Function(int index, bool value) onToggle;
+  final void Function(int index, String value) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      title: 'Tasks',
+      child: Column(
+        children: List.generate(controllers.length, (index) {
+          return _TodoRow(
+            checked: checks[index],
+            controller: controllers[index],
+            onToggle: (value) => onToggle(index, value),
+            onChanged: (value) => onChanged(index, value),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _NotesSection extends StatelessWidget {
+  const _NotesSection({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      title: 'Notes',
+      child: TextField(
+        controller: controller,
+        maxLines: null,
+        minLines: 6,
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _HourlyGridPainter extends CustomPainter {
   _HourlyGridPainter({
     required this.hours,
@@ -204,7 +439,7 @@ class _HourlyGridPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
 
       final hour = hours[i];
-      final label = '${hour.toString().padLeft(2, '0')}.00';
+      final label = _formatHour(hour);
       final textPainter = TextPainter(
         text: TextSpan(
           text: label,
@@ -234,4 +469,96 @@ class _HourlyGridPainter extends CustomPainter {
         oldDelegate.lineColor != lineColor ||
         oldDelegate.labelColor != labelColor;
   }
+}
+
+class _TodoRow extends StatelessWidget {
+  const _TodoRow({
+    required this.checked,
+    required this.controller,
+    required this.onToggle,
+    required this.onChanged,
+  });
+
+  final bool checked;
+  final TextEditingController controller;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: theme.dividerColor),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Checkbox(
+            value: checked,
+            onChanged: (value) => onToggle(value ?? false),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              maxLines: 1,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+              ),
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _dateKey(DateTime date) {
+  final normalized = _normalizeDate(date);
+  final month = normalized.month.toString().padLeft(2, '0');
+  final day = normalized.day.toString().padLeft(2, '0');
+  return '${normalized.year}-$month-$day';
+}
+
+DateTime _normalizeDate(DateTime date) {
+  return DateTime(date.year, date.month, date.day);
+}
+
+bool _isToday(DateTime date) {
+  final now = DateTime.now();
+  return date.year == now.year &&
+      date.month == now.month &&
+      date.day == now.day;
+}
+
+String _formatDate(DateTime date) {
+  const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const monthNames = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final weekday = weekdayNames[date.weekday - 1];
+  final month = monthNames[date.month - 1];
+  return '$weekday, $month ${date.day}, ${date.year}';
+}
+
+String _formatHour(int hour) {
+  return '${hour.toString().padLeft(2, '0')}:00';
 }

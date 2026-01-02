@@ -66,6 +66,14 @@ class HandwritingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void loadStrokes(List<Stroke> strokes) {
+    _strokes
+      ..clear()
+      ..addAll(strokes);
+    _activeStroke = null;
+    notifyListeners();
+  }
+
   void _eraseAt(Offset point) {
     final radiusSquared = pow(eraserRadius, 2);
     _strokes.removeWhere(
