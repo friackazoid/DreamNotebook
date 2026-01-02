@@ -1,84 +1,16 @@
 import 'package:flutter/material.dart';
 
-class TaskLine {
-  TaskLine({this.text = '', this.done = false});
-
-  bool done;
-  String text;
-}
-
-class DayPlan {
-  DayPlan({
-    required this.dayLabel,
-    this.dateLabel,
-    List<TaskLine>? mits,
-  }) : mits = mits ?? List.generate(3, (_) => TaskLine()) {
-    assert(this.mits.length == 3, 'Each day must have exactly 3 MIT lines.');
-  }
-
-  final String dayLabel;
-  final String? dateLabel;
-  final List<TaskLine> mits;
-}
-
-class MatrixQuadrant {
-  MatrixQuadrant({
-    required this.label,
-    List<String>? lines,
-  }) : lines = lines ?? List.filled(2, '') {
-    assert(this.lines.length == 2, 'Each quadrant must have exactly 2 lines.');
-  }
-
-  final String label;
-  final List<String> lines;
-}
-
-class WeeklyPlan {
-  WeeklyPlan({
-    List<DayPlan>? days,
-    List<String>? goals,
-    this.notes = '',
-    List<MatrixQuadrant>? matrix,
-  })  : days = days ?? _defaultDays(),
-        goals = goals ?? List.filled(5, ''),
-        matrix = matrix ?? _defaultMatrix() {
-    assert(this.days.length == 7, 'Weekly plan needs 7 days.');
-    assert(this.goals.length == 5, 'Weekly goals need exactly 5 lines.');
-    assert(this.matrix.length == 4, 'Matrix needs 4 quadrants.');
-  }
-
-  final List<DayPlan> days;
-  final List<String> goals;
-  String notes;
-  final List<MatrixQuadrant> matrix;
-
-  static List<DayPlan> _defaultDays() {
-    const labels = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    return labels.map((label) => DayPlan(dayLabel: label)).toList();
-  }
-
-  static List<MatrixQuadrant> _defaultMatrix() {
-    return [
-      MatrixQuadrant(label: 'Urgent + Important'),
-      MatrixQuadrant(label: 'Not Urgent + Important'),
-      MatrixQuadrant(label: 'Urgent + Not Important'),
-      MatrixQuadrant(label: 'Not Urgent + Not Important'),
-    ];
-  }
-}
+import '../../../models/weekly_plan.dart';
 
 class WeeklyPlannerSpread extends StatefulWidget {
-  const WeeklyPlannerSpread({super.key, this.initialPlan});
+  const WeeklyPlannerSpread({
+    super.key,
+    required this.initialPlan,
+    this.onChanged,
+  });
 
-  final WeeklyPlan? initialPlan;
+  final WeeklyPlan initialPlan;
+  final ValueChanged<WeeklyPlan>? onChanged;
 
   @override
   State<WeeklyPlannerSpread> createState() => _WeeklyPlannerSpreadState();
@@ -89,13 +21,14 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
   late final List<List<TextEditingController>> _mitControllers;
   late final List<List<bool>> _mitChecks;
   late final List<TextEditingController> _goalControllers;
+  late final List<bool> _goalChecks;
   late final TextEditingController _notesController;
   late final List<List<TextEditingController>> _matrixControllers;
 
   @override
   void initState() {
     super.initState();
-    _plan = widget.initialPlan ?? WeeklyPlan();
+    _plan = widget.initialPlan;
     _mitControllers = List.generate(
       _plan.days.length,
       (dayIndex) => List.generate(
@@ -112,8 +45,12 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
       ),
     );
     _goalControllers = List.generate(
-      _plan.goals.length,
-      (index) => TextEditingController(text: _plan.goals[index]),
+      _plan.weeklyGoals.length,
+      (index) => TextEditingController(text: _plan.weeklyGoals[index].text),
+    );
+    _goalChecks = List.generate(
+      _plan.weeklyGoals.length,
+      (index) => _plan.weeklyGoals[index].done,
     );
     _notesController = TextEditingController(text: _plan.notes);
     _matrixControllers = List.generate(
@@ -192,7 +129,8 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
               return Padding(
                 padding: EdgeInsets.only(bottom: index == _plan.days.length - 1 ? 0 : 12),
                 child: _DaySection(
-                  day: day,
+                  dayLabel: _weekdayLabels[index],
+                  dateLabel: _formatDateLabel(day.dateKey),
                   dayIndex: index,
                   mitControllers: _mitControllers[index],
                   mitChecks: _mitChecks[index],
@@ -221,6 +159,8 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
                 const SizedBox(height: 8),
                 _GoalsSection(
                   controllers: _goalControllers,
+                  checks: _goalChecks,
+                  onToggle: _onToggleGoal,
                   onChanged: _onChangeGoal,
                 ),
                 const SizedBox(height: 16),
@@ -255,28 +195,36 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
     setState(() {
       _mitChecks[dayIndex][lineIndex] = value;
       _plan.days[dayIndex].mits[lineIndex].done = value;
-      // TODO: Wire MIT completion to persistence/state management.
     });
+    widget.onChanged?.call(_plan);
   }
 
   void _onChangeMit(int dayIndex, int lineIndex, String value) {
     _plan.days[dayIndex].mits[lineIndex].text = value;
-    // TODO: Wire MIT text changes to persistence/state management.
+    widget.onChanged?.call(_plan);
+  }
+
+  void _onToggleGoal(int index, bool value) {
+    setState(() {
+      _goalChecks[index] = value;
+      _plan.weeklyGoals[index].done = value;
+    });
+    widget.onChanged?.call(_plan);
   }
 
   void _onChangeGoal(int index, String value) {
-    _plan.goals[index] = value;
-    // TODO: Wire goals to persistence/state management.
+    _plan.weeklyGoals[index].text = value;
+    widget.onChanged?.call(_plan);
   }
 
   void _onChangeNotes(String value) {
     _plan.notes = value;
-    // TODO: Wire notes to persistence/state management.
+    widget.onChanged?.call(_plan);
   }
 
   void _onChangeMatrixLine(int quadIndex, int lineIndex, String value) {
     _plan.matrix[quadIndex].lines[lineIndex] = value;
-    // TODO: Wire matrix entries to persistence/state management.
+    widget.onChanged?.call(_plan);
   }
 }
 
@@ -319,7 +267,8 @@ class _SectionTitle extends StatelessWidget {
 
 class _DaySection extends StatelessWidget {
   const _DaySection({
-    required this.day,
+    required this.dayLabel,
+    required this.dateLabel,
     required this.dayIndex,
     required this.mitControllers,
     required this.mitChecks,
@@ -327,7 +276,8 @@ class _DaySection extends StatelessWidget {
     required this.onChanged,
   });
 
-  final DayPlan day;
+  final String dayLabel;
+  final String dateLabel;
   final int dayIndex;
   final List<TextEditingController> mitControllers;
   final List<bool> mitChecks;
@@ -343,20 +293,18 @@ class _DaySection extends StatelessWidget {
         Row(
           children: [
             Text(
-              day.dayLabel,
+              dayLabel,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (day.dateLabel != null) ...[
-              const SizedBox(width: 8),
-              Text(
-                day.dateLabel!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.hintColor,
-                ),
+            const SizedBox(width: 8),
+            Text(
+              dateLabel,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.hintColor,
               ),
-            ],
+            ),
           ],
         ),
         const SizedBox(height: 6),
@@ -431,10 +379,14 @@ class _MitLine extends StatelessWidget {
 class _GoalsSection extends StatelessWidget {
   const _GoalsSection({
     required this.controllers,
+    required this.checks,
+    required this.onToggle,
     required this.onChanged,
   });
 
   final List<TextEditingController> controllers;
+  final List<bool> checks;
+  final void Function(int index, bool value) onToggle;
   final void Function(int index, String value) onChanged;
 
   @override
@@ -452,11 +404,13 @@ class _GoalsSection extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 2),
           child: Row(
             children: [
-              Text(
-                '-',
-                style: theme.textTheme.bodyMedium,
+              Checkbox(
+                value: checks[index],
+                onChanged: (value) => onToggle(index, value ?? false),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               Expanded(
                 child: TextField(
                   controller: controllers[index],
@@ -558,6 +512,24 @@ class _MatrixGrid extends StatelessWidget {
       ],
     );
   }
+}
+
+const List<String> _weekdayLabels = [
+  'Mon',
+  'Tue',
+  'Wed',
+  'Thu',
+  'Fri',
+  'Sat',
+  'Sun',
+];
+
+String _formatDateLabel(String dateKey) {
+  final parts = dateKey.split('-');
+  if (parts.length != 3) return '';
+  final day = parts[2];
+  final month = parts[1];
+  return '$day.$month';
 }
 
 class _MatrixCell extends StatelessWidget {
