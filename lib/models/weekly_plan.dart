@@ -103,15 +103,52 @@ class MatrixQuadrant {
   }
 }
 
+enum MatrixQuadrantType {
+  iu,
+  inu,
+  niu,
+  ninu,
+}
+
+class MatrixPlacement {
+  MatrixPlacement({
+    required this.goalId,
+    required this.quadrant,
+    required this.orderIndex,
+  });
+
+  final String goalId;
+  final MatrixQuadrantType quadrant;
+  final int orderIndex;
+
+  factory MatrixPlacement.fromJson(Map<String, dynamic> json) {
+    return MatrixPlacement(
+      goalId: json['goalId'] as String? ?? '',
+      quadrant: _quadrantFromString(json['quadrant'] as String? ?? 'iu'),
+      orderIndex: json['orderIndex'] as int? ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'goalId': goalId,
+      'quadrant': _quadrantToString(quadrant),
+      'orderIndex': orderIndex,
+    };
+  }
+}
+
 class WeeklyPlan {
   WeeklyPlan({
     required this.weekKey,
     List<DayPlan>? days,
     List<WeeklyTodo>? weeklyGoals,
     List<MatrixQuadrant>? matrix,
+    List<MatrixPlacement>? matrixPlacements,
   })  : days = days ?? _defaultDays(weekKey),
         weeklyGoals = weeklyGoals ?? _defaultGoals(),
-        matrix = matrix ?? _defaultMatrix() {
+        matrix = matrix ?? _defaultMatrix(),
+        matrixPlacements = matrixPlacements ?? [] {
     if (this.days.length != 7) {
       throw ArgumentError('Weekly plan needs 7 days.');
     }
@@ -127,6 +164,7 @@ class WeeklyPlan {
   final List<DayPlan> days;
   final List<WeeklyTodo> weeklyGoals;
   final List<MatrixQuadrant> matrix;
+  final List<MatrixPlacement> matrixPlacements;
 
   factory WeeklyPlan.empty(String weekKey) {
     return WeeklyPlan(weekKey: weekKey);
@@ -138,6 +176,8 @@ class WeeklyPlan {
     final goalsJson = (json['weeklyGoals'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
     final matrixJson = (json['matrix'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    final placementsJson = (json['matrixPlacements'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
     return WeeklyPlan(
       weekKey: json['weekKey'] as String? ?? '',
@@ -168,6 +208,8 @@ class WeeklyPlan {
             ? MatrixQuadrant.fromJson(matrixJson[index])
             : MatrixQuadrant(label: ''),
       ),
+      matrixPlacements:
+          placementsJson.map((item) => MatrixPlacement.fromJson(item)).toList(),
     );
   }
 
@@ -177,6 +219,8 @@ class WeeklyPlan {
       'days': days.map((day) => day.toJson()).toList(),
       'weeklyGoals': weeklyGoals.map((goal) => goal.toJson()).toList(),
       'matrix': matrix.map((quad) => quad.toJson()).toList(),
+      'matrixPlacements':
+          matrixPlacements.map((item) => item.toJson()).toList(),
     };
   }
 }
@@ -236,4 +280,23 @@ String _fallbackId(String? dateKey, int index) {
     return 'mit-unknown-$index';
   }
   return _mitId(dateKey, index);
+}
+
+MatrixQuadrantType _quadrantFromString(String value) {
+  return switch (value) {
+    'iu' => MatrixQuadrantType.iu,
+    'inu' => MatrixQuadrantType.inu,
+    'niu' => MatrixQuadrantType.niu,
+    'ninu' => MatrixQuadrantType.ninu,
+    _ => MatrixQuadrantType.iu,
+  };
+}
+
+String _quadrantToString(MatrixQuadrantType quadrant) {
+  return switch (quadrant) {
+    MatrixQuadrantType.iu => 'iu',
+    MatrixQuadrantType.inu => 'inu',
+    MatrixQuadrantType.niu => 'niu',
+    MatrixQuadrantType.ninu => 'ninu',
+  };
 }

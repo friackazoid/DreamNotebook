@@ -23,12 +23,15 @@ class WeeklyPlannerSpread extends StatefulWidget {
 }
 
 class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
+  // Acceptance checklist:
+  // - Weekly goals can be dragged into any quadrant and re-ordered by re-dropping.
+  // - Quadrants hold up to 5 items; empty goals are not placeable.
+  // - Placements persist via WeeklyPlan.matrixPlacements.
   late final WeeklyPlan _plan;
   late final List<List<TextEditingController>> _mitControllers;
   late final List<List<bool>> _mitChecks;
   late final List<TextEditingController> _goalControllers;
   late final List<bool> _goalChecks;
-  late final List<List<TextEditingController>> _matrixControllers;
 
   @override
   void initState() {
@@ -57,14 +60,6 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
       _plan.weeklyGoals.length,
       (index) => _plan.weeklyGoals[index].done,
     );
-    _matrixControllers = List.generate(
-      _plan.matrix.length,
-      (quadIndex) => List.generate(
-        _plan.matrix[quadIndex].lines.length,
-        (lineIndex) =>
-            TextEditingController(text: _plan.matrix[quadIndex].lines[lineIndex]),
-      ),
-    );
   }
 
   @override
@@ -76,11 +71,6 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
     }
     for (final controller in _goalControllers) {
       controller.dispose();
-    }
-    for (final quadControllers in _matrixControllers) {
-      for (final controller in quadControllers) {
-        controller.dispose();
-      }
     }
     super.dispose();
   }
@@ -167,21 +157,30 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
               children: [
                 _SectionTitle(title: 'Weekly Goals'),
                 const SizedBox(height: 8),
-                _GoalsSection(
-                  controllers: _goalControllers,
-                  checks: _goalChecks,
-                  onToggle: _onToggleGoal,
-                  onChanged: _onChangeGoal,
+                DragTarget<_GoalDragData>(
+                  onWillAccept: (data) =>
+                      data?.sourceQuadrant != null && data != null,
+                  onAccept: (data) => _removeGoalFromMatrix(data.goalId),
+                  builder: (context, candidates, rejected) {
+                    return _GoalsSection(
+                      controllers: _goalControllers,
+                      checks: _goalChecks,
+                      goalIds:
+                          _plan.weeklyGoals.map((goal) => goal.id).toList(),
+                      onToggle: _onToggleGoal,
+                      onChanged: _onChangeGoal,
+                    );
+                  },
                 ),
                 const SizedBox(height: 16),
                 _SectionTitle(title: 'Urgent / Important'),
                 const SizedBox(height: 8),
                 SizedBox(
                   height: matrixHeight,
-                  child: _MatrixGrid(
-                    quadrants: _plan.matrix,
-                    controllers: _matrixControllers,
-                    onChanged: _onChangeMatrixLine,
+                  child: _MatrixBoard(
+                    placements: _plan.matrixPlacements,
+                    goals: _plan.weeklyGoals,
+                    onMoveGoal: _placeGoalInQuadrant,
                   ),
                 ),
               ],
@@ -215,12 +214,72 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
 
   void _onChangeGoal(int index, String value) {
     _plan.weeklyGoals[index].text = value;
+    if (value.trim().isEmpty) {
+      _removeGoalFromMatrix(_plan.weeklyGoals[index].id);
+    }
     widget.onChanged?.call(_plan);
   }
 
-  void _onChangeMatrixLine(int quadIndex, int lineIndex, String value) {
-    _plan.matrix[quadIndex].lines[lineIndex] = value;
+  void _placeGoalInQuadrant(String goalId, MatrixQuadrantType quadrant) {
+    // Acceptance: allow placing goals in quadrants, enforce max 5, and ignore empty goals.
+    final goal = _plan.weeklyGoals.firstWhere(
+      (goal) => goal.id == goalId,
+      orElse: () => WeeklyTodo(id: goalId),
+    );
+    if (goal.text.trim().isEmpty) return;
+    final current = _plan.matrixPlacements
+        .where((item) => item.quadrant == quadrant)
+        .toList()
+      ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    final alreadyInQuadrant =
+        current.any((placement) => placement.goalId == goalId);
+    if (!alreadyInQuadrant && current.length >= 5) return;
+    setState(() {
+      _plan.matrixPlacements.removeWhere((item) => item.goalId == goalId);
+      final orderIndex = current.length;
+      _plan.matrixPlacements.add(
+        MatrixPlacement(
+          goalId: goalId,
+          quadrant: quadrant,
+          orderIndex: orderIndex,
+        ),
+      );
+      _normalizeQuadrantOrder(quadrant);
+    });
     widget.onChanged?.call(_plan);
+  }
+
+  void _removeGoalFromMatrix(String goalId) {
+    final removed = _plan.matrixPlacements
+        .where((item) => item.goalId == goalId)
+        .toList();
+    if (removed.isEmpty) return;
+    final quadrants = removed.map((item) => item.quadrant).toSet();
+    setState(() {
+      _plan.matrixPlacements.removeWhere((item) => item.goalId == goalId);
+      for (final quadrant in quadrants) {
+        _normalizeQuadrantOrder(quadrant);
+      }
+    });
+    widget.onChanged?.call(_plan);
+  }
+
+  void _normalizeQuadrantOrder(MatrixQuadrantType quadrant) {
+    final items = _plan.matrixPlacements
+        .where((item) => item.quadrant == quadrant)
+        .toList()
+      ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      _plan.matrixPlacements.remove(item);
+      _plan.matrixPlacements.add(
+        MatrixPlacement(
+          goalId: item.goalId,
+          quadrant: quadrant,
+          orderIndex: i,
+        ),
+      );
+    }
   }
 }
 
@@ -397,12 +456,14 @@ class _GoalsSection extends StatelessWidget {
   const _GoalsSection({
     required this.controllers,
     required this.checks,
+    required this.goalIds,
     required this.onToggle,
     required this.onChanged,
   });
 
   final List<TextEditingController> controllers;
   final List<bool> checks;
+  final List<String> goalIds;
   final void Function(int index, bool value) onToggle;
   final void Function(int index, String value) onChanged;
 
@@ -428,6 +489,21 @@ class _GoalsSection extends StatelessWidget {
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               const SizedBox(width: 4),
+              LongPressDraggable<_GoalDragData>(
+                data: _GoalDragData(goalId: goalIds[index]),
+                feedback: _DragChip(text: controllers[index].text),
+                childWhenDragging: Icon(
+                  Icons.drag_indicator,
+                  size: 16,
+                  color: theme.hintColor,
+                ),
+                child: Icon(
+                  Icons.drag_indicator,
+                  size: 16,
+                  color: theme.hintColor,
+                ),
+              ),
+              const SizedBox(width: 6),
               Expanded(
                 child: TextField(
                   controller: controllers[index],
@@ -446,56 +522,6 @@ class _GoalsSection extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _MatrixGrid extends StatelessWidget {
-  const _MatrixGrid({
-    required this.quadrants,
-    required this.controllers,
-    required this.onChanged,
-  });
-
-  final List<MatrixQuadrant> quadrants;
-  final List<List<TextEditingController>> controllers;
-  final void Function(int quadIndex, int lineIndex, String value) onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Table(
-      border: TableBorder.all(color: theme.dividerColor),
-      children: [
-        TableRow(
-          children: [
-            _MatrixCell(
-              quadrant: quadrants[0],
-              controllers: controllers[0],
-              onChanged: (lineIndex, value) => onChanged(0, lineIndex, value),
-            ),
-            _MatrixCell(
-              quadrant: quadrants[1],
-              controllers: controllers[1],
-              onChanged: (lineIndex, value) => onChanged(1, lineIndex, value),
-            ),
-          ],
-        ),
-        TableRow(
-          children: [
-            _MatrixCell(
-              quadrant: quadrants[2],
-              controllers: controllers[2],
-              onChanged: (lineIndex, value) => onChanged(2, lineIndex, value),
-            ),
-            _MatrixCell(
-              quadrant: quadrants[3],
-              controllers: controllers[3],
-              onChanged: (lineIndex, value) => onChanged(3, lineIndex, value),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }
@@ -527,57 +553,216 @@ DateTime _parseDateKey(String dateKey) {
   return DateTime(year, month, day);
 }
 
-class _MatrixCell extends StatelessWidget {
-  const _MatrixCell({
-    required this.quadrant,
-    required this.controllers,
-    required this.onChanged,
+class _MatrixBoard extends StatelessWidget {
+  const _MatrixBoard({
+    required this.placements,
+    required this.goals,
+    required this.onMoveGoal,
   });
 
-  final MatrixQuadrant quadrant;
-  final List<TextEditingController> controllers;
-  final void Function(int lineIndex, String value) onChanged;
+  final List<MatrixPlacement> placements;
+  final List<WeeklyTodo> goals;
+  final void Function(String goalId, MatrixQuadrantType quadrant) onMoveGoal;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            quadrant.label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w600,
+    return Table(
+      border: TableBorder.all(color: theme.dividerColor),
+      children: [
+        TableRow(
+          children: [
+            _MatrixQuadrantCell(
+              label: 'Important + Urgent',
+              quadrant: MatrixQuadrantType.iu,
+              placements: placements,
+              goals: goals,
+              onMoveGoal: onMoveGoal,
             ),
-          ),
-          const SizedBox(height: 4),
-          ...List.generate(
-            controllers.length,
-            (index) => Container(
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: theme.dividerColor),
-                ),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: TextField(
-                controller: controllers[index],
-                maxLines: 1,
+            _MatrixQuadrantCell(
+              label: 'Important + Not Urgent',
+              quadrant: MatrixQuadrantType.inu,
+              placements: placements,
+              goals: goals,
+              onMoveGoal: onMoveGoal,
+            ),
+          ],
+        ),
+        TableRow(
+          children: [
+            _MatrixQuadrantCell(
+              label: 'Not Important + Urgent',
+              quadrant: MatrixQuadrantType.niu,
+              placements: placements,
+              goals: goals,
+              onMoveGoal: onMoveGoal,
+            ),
+            _MatrixQuadrantCell(
+              label: 'Not Important + Not Urgent',
+              quadrant: MatrixQuadrantType.ninu,
+              placements: placements,
+              goals: goals,
+              onMoveGoal: onMoveGoal,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MatrixQuadrantCell extends StatelessWidget {
+  const _MatrixQuadrantCell({
+    required this.label,
+    required this.quadrant,
+    required this.placements,
+    required this.goals,
+    required this.onMoveGoal,
+  });
+
+  final String label;
+  final MatrixQuadrantType quadrant;
+  final List<MatrixPlacement> placements;
+  final List<WeeklyTodo> goals;
+  final void Function(String goalId, MatrixQuadrantType quadrant) onMoveGoal;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final items = placements
+        .where((item) => item.quadrant == quadrant)
+        .toList()
+      ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    final goalById = {for (final goal in goals) goal.id: goal};
+
+    return DragTarget<_GoalDragData>(
+      onWillAccept: (data) {
+        if (data == null) return false;
+        final goal = goalById[data.goalId];
+        if (goal == null || goal.text.trim().isEmpty) return false;
+        if (items.length >= 5 && data.sourceQuadrant != quadrant) return false;
+        return true;
+      },
+      onAccept: (data) {
+        onMoveGoal(data.goalId, quadrant);
+      },
+      builder: (context, candidates, rejected) {
+        final isActive = candidates.isNotEmpty;
+        return Container(
+          padding: const EdgeInsets.all(8),
+          color: isActive
+              ? theme.colorScheme.primary.withOpacity(0.08)
+              : Colors.transparent,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
                 style: theme.textTheme.labelSmall?.copyWith(
-                  overflow: TextOverflow.ellipsis,
+                  fontWeight: FontWeight.w600,
                 ),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  border: InputBorder.none,
-                ),
-                onChanged: (value) => onChanged(index, value),
               ),
-            ),
+              const SizedBox(height: 6),
+              if (items.isEmpty)
+                Text(
+                  isActive ? 'Drop here' : '—',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.hintColor,
+                  ),
+                ),
+              if (items.isNotEmpty)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: items.map((item) {
+                    final goal = goalById[item.goalId];
+                    if (goal == null) return const SizedBox.shrink();
+                    return LongPressDraggable<_GoalDragData>(
+                      data: _GoalDragData(
+                        goalId: goal.id,
+                        sourceQuadrant: quadrant,
+                      ),
+                      feedback: _DragChip(text: goal.text),
+                      child: _MatrixChip(goal: goal),
+                    );
+                  }).toList(),
+                ),
+            ],
           ),
+        );
+      },
+    );
+  }
+}
+
+class _MatrixChip extends StatelessWidget {
+  const _MatrixChip({required this.goal});
+
+  final WeeklyTodo goal;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textStyle = theme.textTheme.labelSmall?.copyWith(
+      color: goal.done ? theme.hintColor : theme.colorScheme.onSurface,
+      decoration: goal.done ? TextDecoration.lineThrough : null,
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (goal.done)
+            Icon(
+              Icons.check_circle,
+              size: 12,
+              color: theme.colorScheme.primary,
+            ),
+          if (goal.done) const SizedBox(width: 4),
+          Text(goal.text, style: textStyle),
         ],
       ),
     );
   }
+}
+
+class _DragChip extends StatelessWidget {
+  const _DragChip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceVariant,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.dividerColor),
+        ),
+        child: Text(
+          text.isEmpty ? 'Goal' : text,
+          style: theme.textTheme.labelSmall,
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalDragData {
+  _GoalDragData({
+    required this.goalId,
+    this.sourceQuadrant,
+  });
+
+  final String goalId;
+  final MatrixQuadrantType? sourceQuadrant;
 }
