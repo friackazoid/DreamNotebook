@@ -1,0 +1,85 @@
+import 'planner_type.dart';
+import 'collections_data.dart';
+import 'pet_project_data.dart';
+import 'planner_page_data.dart';
+
+class NotebookData {
+  const NotebookData({
+    required this.daily,
+    required this.weekly,
+    required this.monthly,
+    required this.collections,
+    required this.petProject,
+  });
+
+  final PlannerPageData daily;
+  final PlannerPageData weekly;
+  final PlannerPageData monthly;
+  final CollectionsData collections;
+  final PetProjectData petProject;
+
+  factory NotebookData.empty() => NotebookData(
+        daily: PlannerPageData.empty(),
+        weekly: PlannerPageData.empty(),
+        monthly: PlannerPageData.empty(),
+        collections: CollectionsData.empty(),
+        petProject: PetProjectData.empty(),
+      );
+
+  PlannerPageData plannerFor(PlannerType type) {
+    return switch (type) {
+      PlannerType.daily => daily,
+      PlannerType.weekly => weekly,
+      PlannerType.monthly => monthly,
+    };
+  }
+
+  NotebookData copyWith({
+    PlannerPageData? daily,
+    PlannerPageData? weekly,
+    PlannerPageData? monthly,
+    CollectionsData? collections,
+    PetProjectData? petProject,
+  }) {
+    return NotebookData(
+      daily: daily ?? this.daily,
+      weekly: weekly ?? this.weekly,
+      monthly: monthly ?? this.monthly,
+      collections: collections ?? this.collections,
+      petProject: petProject ?? this.petProject,
+    );
+  }
+
+  NotebookData copyWithPlanner(PlannerType type, PlannerPageData data) {
+    return switch (type) {
+      PlannerType.daily => copyWith(daily: data),
+      PlannerType.weekly => copyWith(weekly: data),
+      PlannerType.monthly => copyWith(monthly: data),
+    };
+  }
+
+  factory NotebookData.fromJson(Map<String, dynamic> json) {
+    return NotebookData(
+      daily: PlannerPageData.fromJson(
+          json['daily'] as Map<String, dynamic>? ?? const {}),
+      weekly: PlannerPageData.fromJson(
+          json['weekly'] as Map<String, dynamic>? ?? const {}),
+      monthly: PlannerPageData.fromJson(
+          json['monthly'] as Map<String, dynamic>? ?? const {}),
+      collections: CollectionsData.fromJson(
+          json['collections'] as Map<String, dynamic>? ?? const {}),
+      petProject: PetProjectData.fromJson(
+          json['petProject'] as Map<String, dynamic>? ?? const {}),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'daily': daily.toJson(),
+      'weekly': weekly.toJson(),
+      'monthly': monthly.toJson(),
+      'collections': collections.toJson(),
+      'petProject': petProject.toJson(),
+    };
+  }
+}
