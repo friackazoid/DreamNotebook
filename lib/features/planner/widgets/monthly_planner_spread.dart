@@ -51,7 +51,6 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
   late final List<TextEditingController> _priorityControllers;
   late final List<bool> _priorityChecks;
   late final TextEditingController _habitNameController;
-  late final TextEditingController _notesController;
 
   @override
   void initState() {
@@ -66,7 +65,6 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
       _priorityChecks[i] = _plan.priorities[i].done;
     }
     _habitNameController = TextEditingController(text: _plan.habitName);
-    _notesController = TextEditingController(text: _plan.notes);
   }
 
   @override
@@ -75,7 +73,6 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
       controller.dispose();
     }
     _habitNameController.dispose();
-    _notesController.dispose();
     super.dispose();
   }
 
@@ -169,15 +166,6 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
               onToggleDay: _onToggleHabitDay,
               onNameChanged: _onChangeHabitName,
             ),
-            const SizedBox(height: 16),
-            _SectionTitle(title: 'Notes / Reminders'),
-            const SizedBox(height: 8),
-            Expanded(
-              child: _LinedNotesField(
-                controller: _notesController,
-                onChanged: _onChangeNotes,
-              ),
-            ),
           ],
         ),
       ),
@@ -206,11 +194,6 @@ class _MonthlyPlannerSpreadState extends State<MonthlyPlannerSpread> {
 
   void _onChangeHabitName(String value) {
     _plan.habitName = value;
-    widget.onChanged?.call(_plan);
-  }
-
-  void _onChangeNotes(String value) {
-    _plan.notes = value;
     widget.onChanged?.call(_plan);
   }
 }
@@ -578,67 +561,6 @@ class _HabitDayBox extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _LinedNotesField extends StatelessWidget {
-  const _LinedNotesField({
-    required this.controller,
-    required this.onChanged,
-  });
-
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.dividerColor),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: CustomPaint(
-          painter: _LinedPaperPainter(
-            lineColor: theme.dividerColor.withOpacity(0.6),
-          ),
-          child: TextField(
-            controller: controller,
-            maxLines: null,
-            expands: true,
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.all(8),
-            ),
-            onChanged: onChanged,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LinedPaperPainter extends CustomPainter {
-  _LinedPaperPainter({required this.lineColor});
-
-  final Color lineColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 1;
-    const lineHeight = 24.0;
-    for (double y = lineHeight; y < size.height; y += lineHeight) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _LinedPaperPainter oldDelegate) {
-    return oldDelegate.lineColor != lineColor;
   }
 }
 

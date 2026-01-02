@@ -27,7 +27,6 @@ class MonthlyPlan {
     List<TaskLine>? priorities,
     this.habitName = '',
     List<bool>? habitChecks,
-    this.notes = '',
   })  : priorities = priorities ?? List.generate(5, (_) => TaskLine()),
         habitChecks = habitChecks ?? List.filled(31, false) {
     if (this.priorities.length != 5) {
@@ -44,7 +43,6 @@ class MonthlyPlan {
   final List<TaskLine> priorities;
   String habitName;
   final List<bool> habitChecks;
-  String notes;
 
   factory MonthlyPlan.empty({
     required String monthKey,
@@ -75,7 +73,6 @@ class MonthlyPlan {
         31,
         (index) => index < habitJson.length ? habitJson[index] : false,
       ),
-      notes: json['notes'] as String? ?? '',
     );
   }
 
@@ -87,7 +84,6 @@ class MonthlyPlan {
       'priorities': priorities.map((item) => item.toJson()).toList(),
       'habitName': habitName,
       'habitChecks': habitChecks,
-      'notes': notes,
     };
   }
 }
