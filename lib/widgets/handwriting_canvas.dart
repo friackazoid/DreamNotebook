@@ -1,27 +1,43 @@
+import 'dart:collection';
 import 'dart:math';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 
 import '../models/drawing_stroke.dart';
 
-class DrawingController extends ChangeNotifier {
+enum HandwritingTool { pen, eraser }
+
+class HandwritingController extends ChangeNotifier {
   final List<Stroke> _strokes = [];
   Stroke? _activeStroke;
 
-  bool isErasing = false;
+  HandwritingTool _tool = HandwritingTool.pen;
   double strokeWidth = 3;
   Color strokeColor = Colors.black;
   double eraserRadius = 18;
 
-  List<Stroke> get strokes => List.unmodifiable(_strokes);
+  List<Stroke> get strokes => UnmodifiableListView(_strokes);
+  HandwritingTool get tool => _tool;
 
-  void startStroke(Offset position, double pressure) {
-    if (isErasing) {
-      _eraseAt(position);
+  void setTool(HandwritingTool tool) {
+    if (_tool == tool) return;
+    _tool = tool;
+    notifyListeners();
+  }
+
+  void setStrokeWidth(double value) {
+    strokeWidth = value;
+    notifyListeners();
+  }
+
+  void startStroke(Offset point, InputMeta meta) {
+    if (_tool == HandwritingTool.eraser) {
+      _eraseAt(point);
       return;
     }
     _activeStroke = Stroke(
-      points: [StrokePoint(position: position, pressure: pressure)],
+      points: [StrokePoint(position: point, meta: meta)],
       color: strokeColor,
       width: strokeWidth,
     );
@@ -29,14 +45,13 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void appendPoint(Offset position, double pressure) {
-    if (isErasing) {
-      _eraseAt(position);
+  void addPoint(Offset point, InputMeta meta) {
+    if (_tool == HandwritingTool.eraser) {
+      _eraseAt(point);
       return;
     }
     if (_activeStroke == null) return;
-    _activeStroke!.points
-        .add(StrokePoint(position: position, pressure: pressure));
+    _activeStroke!.points.add(StrokePoint(position: point, meta: meta));
     notifyListeners();
   }
 
@@ -51,56 +66,134 @@ class DrawingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setEraser(bool value) {
-    if (isErasing == value) return;
-    isErasing = value;
-    notifyListeners();
-  }
-
-  void setStrokeWidth(double value) {
-    strokeWidth = value;
-    notifyListeners();
-  }
-
-  void _eraseAt(Offset position) {
+  void _eraseAt(Offset point) {
     final radiusSquared = pow(eraserRadius, 2);
     _strokes.removeWhere(
       (stroke) => stroke.points.any(
-        (point) => (point.position - position).distanceSquared < radiusSquared,
+        (strokePoint) =>
+            (strokePoint.position - point).distanceSquared < radiusSquared,
       ),
     );
     notifyListeners();
   }
 }
 
-class HandwritingCanvas extends StatelessWidget {
-  const HandwritingCanvas({super.key, required this.controller});
+class HandwritingCanvas extends StatefulWidget {
+  const HandwritingCanvas({
+    super.key,
+    required this.controller,
+    this.childOverlays = const [],
+  });
 
-  final DrawingController controller;
+  final HandwritingController controller;
+  final List<Widget> childOverlays;
+
+  @override
+  State<HandwritingCanvas> createState() => _HandwritingCanvasState();
+}
+
+class _HandwritingCanvasState extends State<HandwritingCanvas> {
+  int? _activePointer;
+  PointerDeviceKind? _activeKind;
 
   @override
   Widget build(BuildContext context) {
     return Listener(
-      onPointerDown: (event) =>
-          controller.startStroke(event.localPosition, event.pressure),
-      onPointerMove: (event) =>
-          controller.appendPoint(event.localPosition, event.pressure),
-      onPointerUp: (_) => controller.endStroke(),
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          return CustomPaint(
-            painter: _StrokePainter(controller.strokes),
-            size: Size.infinite,
-          );
-        },
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _handlePointerDown,
+      onPointerMove: _handlePointerMove,
+      onPointerUp: _handlePointerUp,
+      onPointerCancel: _handlePointerCancel,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          RepaintBoundary(
+            child: CustomPaint(
+              painter: _StrokePainter(
+                strokes: widget.controller.strokes,
+                repaint: widget.controller,
+              ),
+              size: Size.infinite,
+            ),
+          ),
+          ...widget.childOverlays,
+        ],
       ),
+    );
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if (_shouldIgnorePointer(event)) return;
+    _activePointer = event.pointer;
+    _activeKind = event.kind;
+    widget.controller.startStroke(
+      event.localPosition,
+      _buildMeta(event),
+    );
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (event.pointer != _activePointer) return;
+    widget.controller.addPoint(
+      event.localPosition,
+      _buildMeta(event),
+    );
+  }
+
+  void _handlePointerUp(PointerUpEvent event) {
+    if (event.pointer != _activePointer) return;
+    widget.controller.endStroke();
+    _activePointer = null;
+    _activeKind = null;
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _activePointer) return;
+    widget.controller.endStroke();
+    _activePointer = null;
+    _activeKind = null;
+  }
+
+  bool _shouldIgnorePointer(PointerDownEvent event) {
+    if (_activePointer == null) return false;
+
+    final activeIsStylus = _activeKind == PointerDeviceKind.stylus;
+    final incomingIsStylus = event.kind == PointerDeviceKind.stylus;
+
+    // Palm rejection: once a stylus stroke is active, ignore touch inputs.
+    // Platform-specific palm detection varies; this is a simple, predictable rule.
+    if (activeIsStylus && !incomingIsStylus) return true;
+
+    // Prefer stylus when it appears; end the non-stylus stroke and switch.
+    if (!activeIsStylus && incomingIsStylus) {
+      widget.controller.endStroke();
+      _activePointer = null;
+      _activeKind = null;
+      return false;
+    }
+
+    // Ignore extra pointers of the same kind to avoid multi-touch collisions.
+    return true;
+  }
+
+  InputMeta _buildMeta(PointerEvent event) {
+    final pressure = event.pressure > 0 ? event.pressure : 1.0;
+    return InputMeta(
+      pointerId: event.pointer,
+      kind: event.kind,
+      pressure: pressure,
+      tilt: event.tilt,
+      orientation: event.orientation,
+      buttons: event.buttons,
     );
   }
 }
 
 class _StrokePainter extends CustomPainter {
-  _StrokePainter(this.strokes);
+  _StrokePainter({
+    required this.strokes,
+    Listenable? repaint,
+  }) : super(repaint: repaint);
 
   final List<Stroke> strokes;
 
@@ -120,8 +213,11 @@ class _StrokePainter extends CustomPainter {
         continue;
       }
 
-      final path = Path()..moveTo(
-          stroke.points.first.position.dx, stroke.points.first.position.dy);
+      final path = Path()
+        ..moveTo(
+          stroke.points.first.position.dx,
+          stroke.points.first.position.dy,
+        );
       for (var i = 1; i < stroke.points.length; i++) {
         final p0 = stroke.points[i - 1].position;
         final p1 = stroke.points[i].position;

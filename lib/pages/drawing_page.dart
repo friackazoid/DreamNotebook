@@ -11,12 +11,12 @@ class DrawingPage extends StatefulWidget {
 }
 
 class _DrawingPageState extends State<DrawingPage> {
-  late final DrawingController _controller;
+  late final HandwritingController _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = DrawingController();
+    _controller = HandwritingController();
   }
 
   @override
@@ -27,7 +27,7 @@ class _DrawingPageState extends State<DrawingPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isErasing = _controller.isErasing;
+    final isErasing = _controller.tool == HandwritingTool.eraser;
     return Column(
       children: [
         Padding(
@@ -36,7 +36,7 @@ class _DrawingPageState extends State<DrawingPage> {
             children: [
               FilledButton.tonalIcon(
                 onPressed: () =>
-                    setState(() => _controller.setEraser(false)),
+                    setState(() => _controller.setTool(HandwritingTool.pen)),
                 icon: Icon(
                   Icons.edit,
                   color: isErasing
@@ -47,8 +47,9 @@ class _DrawingPageState extends State<DrawingPage> {
               ),
               const SizedBox(width: 12),
               FilledButton.tonalIcon(
-                onPressed: () =>
-                    setState(() => _controller.setEraser(true)),
+                onPressed: () => setState(
+                  () => _controller.setTool(HandwritingTool.eraser),
+                ),
                 icon: Icon(
                   Icons.auto_fix_high,
                   color: isErasing
