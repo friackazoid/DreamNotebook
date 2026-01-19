@@ -124,37 +124,6 @@ class NotebookState extends ValueNotifier<NotebookData> {
     _persist();
   }
 
-  void addPetTask(String title, DateTime? dueDate) {
-    final task = TaskItem(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      title: title,
-      isDone: false,
-      dueDate: dueDate,
-    );
-    final updated = value.petProject
-        .copyWith(tasks: [...value.petProject.tasks, task]);
-    value = value.copyWith(petProject: updated);
-    _persist();
-  }
-
-  void togglePetTask(String id) {
-    final updated = value.petProject.tasks
-        .map((task) =>
-            task.id == id ? task.copyWith(isDone: !task.isDone) : task)
-        .toList();
-    value = value.copyWith(
-      petProject: value.petProject.copyWith(tasks: updated),
-    );
-    _persist();
-  }
-
-  void updatePetNotes(String notes) {
-    value = value.copyWith(
-      petProject: value.petProject.copyWith(notes: notes),
-    );
-    _persist();
-  }
-
   void _updatePlanner(PlannerType type, PlannerPageData data) {
     value = value.copyWithPlanner(type, data);
     _persist();

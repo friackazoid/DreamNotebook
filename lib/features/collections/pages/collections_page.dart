@@ -4,7 +4,6 @@ import '../../../core/state/notebook_state.dart';
 import '../../../models/collection_item.dart';
 import '../../../models/notebook_data.dart';
 import '../../../widgets/section_card.dart';
-import '../widgets/pet_project_section.dart';
 
 class CollectionsPage extends StatelessWidget {
   const CollectionsPage({super.key});
@@ -52,15 +51,6 @@ class CollectionsPage extends StatelessWidget {
                 CollectionType.games,
                 item.id,
               ),
-            ),
-            const SizedBox(height: 16),
-            PetProjectSection(
-              tasks: data.petProject.tasks,
-              notes: data.petProject.notes,
-              onAddTask: (title, dueDate) =>
-                  state.addPetTask(title, dueDate),
-              onToggleTask: (task) => state.togglePetTask(task.id),
-              onNotesChanged: state.updatePetNotes,
             ),
           ],
         );

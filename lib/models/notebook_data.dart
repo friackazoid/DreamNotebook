@@ -1,6 +1,5 @@
 import 'planner_type.dart';
 import 'collections_data.dart';
-import 'pet_project_data.dart';
 import 'planner_page_data.dart';
 
 class NotebookData {
@@ -9,21 +8,18 @@ class NotebookData {
     required this.weekly,
     required this.monthly,
     required this.collections,
-    required this.petProject,
   });
 
   final PlannerPageData daily;
   final PlannerPageData weekly;
   final PlannerPageData monthly;
   final CollectionsData collections;
-  final PetProjectData petProject;
 
   factory NotebookData.empty() => NotebookData(
         daily: PlannerPageData.empty(),
         weekly: PlannerPageData.empty(),
         monthly: PlannerPageData.empty(),
         collections: CollectionsData.empty(),
-        petProject: PetProjectData.empty(),
       );
 
   PlannerPageData plannerFor(PlannerType type) {
@@ -39,14 +35,12 @@ class NotebookData {
     PlannerPageData? weekly,
     PlannerPageData? monthly,
     CollectionsData? collections,
-    PetProjectData? petProject,
   }) {
     return NotebookData(
       daily: daily ?? this.daily,
       weekly: weekly ?? this.weekly,
       monthly: monthly ?? this.monthly,
       collections: collections ?? this.collections,
-      petProject: petProject ?? this.petProject,
     );
   }
 
@@ -68,8 +62,6 @@ class NotebookData {
           json['monthly'] as Map<String, dynamic>? ?? const {}),
       collections: CollectionsData.fromJson(
           json['collections'] as Map<String, dynamic>? ?? const {}),
-      petProject: PetProjectData.fromJson(
-          json['petProject'] as Map<String, dynamic>? ?? const {}),
     );
   }
 
@@ -79,7 +71,6 @@ class NotebookData {
       'weekly': weekly.toJson(),
       'monthly': monthly.toJson(),
       'collections': collections.toJson(),
-      'petProject': petProject.toJson(),
     };
   }
 }
