@@ -74,6 +74,7 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
 
   @override
   void dispose() {
+    _saveCurrentPlan();
     _debounce?.cancel();
     super.dispose();
   }

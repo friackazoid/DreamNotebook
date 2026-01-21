@@ -10,6 +10,10 @@ class WeeklyPlannerSpread extends StatefulWidget {
     this.onDaySelected,
     this.onDayNoteSelected,
     this.dayKeysWithNotes = const {},
+    required this.busyHours,
+    required this.freeHours,
+    required this.sleepHours,
+    required this.totalHours,
   });
 
   final WeeklyPlan initialPlan;
@@ -17,6 +21,10 @@ class WeeklyPlannerSpread extends StatefulWidget {
   final ValueChanged<DateTime>? onDaySelected;
   final ValueChanged<DateTime>? onDayNoteSelected;
   final Set<String> dayKeysWithNotes;
+  final int busyHours;
+  final int freeHours;
+  final int sleepHours;
+  final int totalHours;
 
   @override
   State<WeeklyPlannerSpread> createState() => _WeeklyPlannerSpreadState();
@@ -155,6 +163,15 @@ class _WeeklyPlannerSpreadState extends State<WeeklyPlannerSpread> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _SectionTitle(title: 'Week Load'),
+                const SizedBox(height: 8),
+                _WeeklyHoursBar(
+                  busyHours: widget.busyHours,
+                  freeHours: widget.freeHours,
+                  sleepHours: widget.sleepHours,
+                  totalHours: widget.totalHours,
+                ),
+                const SizedBox(height: 16),
                 _SectionTitle(title: 'Weekly Goals'),
                 const SizedBox(height: 8),
                 DragTarget<_GoalDragData>(
@@ -765,4 +782,124 @@ class _GoalDragData {
 
   final String goalId;
   final MatrixQuadrantType? sourceQuadrant;
+}
+
+class _WeeklyHoursBar extends StatelessWidget {
+  const _WeeklyHoursBar({
+    required this.busyHours,
+    required this.freeHours,
+    required this.sleepHours,
+    required this.totalHours,
+  });
+
+  final int busyHours;
+  final int freeHours;
+  final int sleepHours;
+  final int totalHours;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final segments = [
+      _HoursSegmentData(
+        label: 'Busy',
+        hours: busyHours,
+        color: theme.colorScheme.primary,
+      ),
+      _HoursSegmentData(
+        label: 'Free',
+        hours: freeHours,
+        color: theme.colorScheme.secondaryContainer,
+      ),
+      _HoursSegmentData(
+        label: 'Sleep 20-06',
+        hours: sleepHours,
+        color: theme.colorScheme.tertiaryContainer,
+      ),
+    ].where((segment) => segment.hours > 0).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 14,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceVariant.withOpacity(0.25),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: theme.dividerColor),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Row(
+              children: [
+                for (final segment in segments)
+                  Expanded(
+                    flex: segment.hours,
+                    child: Container(color: segment.color),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          runSpacing: 6,
+          children: [
+            for (final segment in segments)
+              _HoursLegendItem(segment: segment),
+            Text(
+              'Total ${totalHours}h',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.hintColor,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _HoursLegendItem extends StatelessWidget {
+  const _HoursLegendItem({required this.segment});
+
+  final _HoursSegmentData segment;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: segment.color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '${segment.label}: ${segment.hours}h',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.hintColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HoursSegmentData {
+  const _HoursSegmentData({
+    required this.label,
+    required this.hours,
+    required this.color,
+  });
+
+  final String label;
+  final int hours;
+  final Color color;
 }
