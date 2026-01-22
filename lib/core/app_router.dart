@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../pages/home_shell_page.dart';
 
-enum AppSection { daily, weekly, monthly, collections, quickNote }
+enum AppSection { daily, weekly, monthly, sprints, collections, quickNote }
 
 class AppRoutePath {
   const AppRoutePath(
@@ -36,6 +36,8 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
         );
       case '/quick-note':
         return const AppRoutePath(AppSection.quickNote);
+      case '/sprints':
+        return const AppRoutePath(AppSection.sprints);
       case '/collections':
         return const AppRoutePath(AppSection.collections);
       case '/daily':
@@ -52,6 +54,7 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
     final location = switch (configuration.section) {
       AppSection.weekly => _weeklyLocation(configuration.weekStart),
       AppSection.monthly => _monthlyLocation(configuration.month),
+      AppSection.sprints => '/sprints',
       AppSection.collections => '/collections',
       AppSection.quickNote => '/quick-note',
       AppSection.daily => _dailyLocation(configuration.dailyDate),

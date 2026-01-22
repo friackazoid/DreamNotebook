@@ -5,6 +5,7 @@ import '../features/collections/pages/collections_page.dart';
 import '../features/planner/pages/daily_planner_page.dart';
 import '../features/planner/pages/monthly_planner_page.dart';
 import '../features/planner/pages/weekly_planner_page.dart';
+import '../features/sprints/pages/sprint_projects_tab.dart';
 import 'quick_note_tab_page.dart';
 
 class HomeShellPage extends StatelessWidget {
@@ -56,6 +57,11 @@ class HomeShellPage extends StatelessWidget {
                     label: Text('Monthly'),
                   ),
                   NavigationRailDestination(
+                    icon: Icon(Icons.flag_outlined),
+                    selectedIcon: Icon(Icons.flag),
+                    label: Text('Sprints Projects'),
+                  ),
+                  NavigationRailDestination(
                     icon: Icon(Icons.collections_bookmark_outlined),
                     selectedIcon: Icon(Icons.collections_bookmark),
                     label: Text('Collections'),
@@ -81,8 +87,9 @@ class HomeShellPage extends StatelessWidget {
       AppSection.daily => 0,
       AppSection.weekly => 1,
       AppSection.monthly => 2,
-      AppSection.collections => 3,
-      AppSection.quickNote => 4,
+      AppSection.sprints => 3,
+      AppSection.collections => 4,
+      AppSection.quickNote => 5,
     };
   }
 
@@ -90,8 +97,9 @@ class HomeShellPage extends StatelessWidget {
     return switch (index) {
       1 => AppSection.weekly,
       2 => AppSection.monthly,
-      3 => AppSection.collections,
-      4 => AppSection.quickNote,
+      3 => AppSection.sprints,
+      4 => AppSection.collections,
+      5 => AppSection.quickNote,
       _ => AppSection.daily,
     };
   }
@@ -101,6 +109,7 @@ class HomeShellPage extends StatelessWidget {
       AppSection.daily => DailyPlannerPage(initialDate: dailyDate),
       AppSection.weekly => WeeklyPlannerPage(initialDate: weeklyDate),
       AppSection.monthly => MonthlyPlannerPage(initialDate: monthlyDate),
+      AppSection.sprints => const SprintProjectsTab(),
       AppSection.collections => const CollectionsPage(),
       AppSection.quickNote => const QuickNoteTabPage(),
     };

@@ -467,6 +467,7 @@ class _ScheduleSection extends StatelessWidget {
                     isDragging,
                   );
                   final isCovered = event != null;
+                  const busyHourColor = Color(0xFFFF6163);
                   return _HourRow(
                     hourLabel: _formatHour(hour),
                     labelWidth: labelWidth,
@@ -477,10 +478,12 @@ class _ScheduleSection extends StatelessWidget {
                             .colorScheme
                             .primary
                             .withOpacity(0.12)
-                        : Theme.of(context)
-                            .colorScheme
-                            .surfaceVariant
-                            .withOpacity(0.5),
+                        : (isCovered
+                            ? busyHourColor
+                            : Theme.of(context)
+                                .colorScheme
+                                .surfaceVariant
+                                .withOpacity(0.5)),
                     title: event?.title ?? '',
                     onTap: () {
                       if (event != null) {

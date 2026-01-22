@@ -804,17 +804,17 @@ class _WeeklyHoursBar extends StatelessWidget {
       _HoursSegmentData(
         label: 'Busy',
         hours: busyHours,
-        color: theme.colorScheme.primary,
+        color: const Color(0xFFFF6163),
       ),
       _HoursSegmentData(
         label: 'Free',
         hours: freeHours,
-        color: theme.colorScheme.secondaryContainer,
+        color: const Color(0xFF00B036),
       ),
       _HoursSegmentData(
         label: 'Sleep 20-06',
         hours: sleepHours,
-        color: theme.colorScheme.tertiaryContainer,
+        color: const Color(0xFF000084),
       ),
     ].where((segment) => segment.hours > 0).toList();
 
