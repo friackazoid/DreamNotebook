@@ -105,8 +105,8 @@ class _HomeShellPageState extends State<HomeShellPage> {
           onTap: () => widget.onSectionSelected(AppSection.monthly),
         ),
         ListTile(
-          selected: selectedSection == AppSection.sprints &&
-              sprintWeekIndex == 0,
+          selected:
+              selectedSection == AppSection.sprints && sprintWeekIndex == 0,
           leading: Icon(
             Icons.flag_outlined,
             color: selectedSection == AppSection.sprints
@@ -127,7 +127,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
           ),
           onTap: () {
             setState(() => _sprintsExpanded = !_sprintsExpanded);
-            widget.onSprintWeekSelected();
+            widget.onSprintWeekSelected(weekIndex: 0);
           },
         ),
         if (_sprintsExpanded) ...[
@@ -135,7 +135,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
             label: 'Sprint Overview',
             selected:
                 selectedSection == AppSection.sprints && sprintWeekIndex == 0,
-            onTap: () => widget.onSprintWeekSelected(),
+            onTap: () => widget.onSprintWeekSelected(weekIndex: 0),
           ),
           _SubNavItem(
             label: 'Week 1',
@@ -144,22 +144,46 @@ class _HomeShellPageState extends State<HomeShellPage> {
             onTap: () => widget.onSprintWeekSelected(weekIndex: 1),
           ),
           _SubNavItem(
-            label: 'Week 2',
+            label: 'Results Week 1',
             selected:
                 selectedSection == AppSection.sprints && sprintWeekIndex == 2,
             onTap: () => widget.onSprintWeekSelected(weekIndex: 2),
           ),
           _SubNavItem(
-            label: 'Week 3',
+            label: 'Week 2',
             selected:
                 selectedSection == AppSection.sprints && sprintWeekIndex == 3,
             onTap: () => widget.onSprintWeekSelected(weekIndex: 3),
           ),
           _SubNavItem(
-            label: 'Integration Week',
+            label: 'Results Week 2',
             selected:
                 selectedSection == AppSection.sprints && sprintWeekIndex == 4,
             onTap: () => widget.onSprintWeekSelected(weekIndex: 4),
+          ),
+          _SubNavItem(
+            label: 'Week 3',
+            selected:
+                selectedSection == AppSection.sprints && sprintWeekIndex == 5,
+            onTap: () => widget.onSprintWeekSelected(weekIndex: 5),
+          ),
+          _SubNavItem(
+            label: 'Results Week 3',
+            selected:
+                selectedSection == AppSection.sprints && sprintWeekIndex == 6,
+            onTap: () => widget.onSprintWeekSelected(weekIndex: 6),
+          ),
+          _SubNavItem(
+            label: 'Integration Week',
+            selected:
+                selectedSection == AppSection.sprints && sprintWeekIndex == 7,
+            onTap: () => widget.onSprintWeekSelected(weekIndex: 7),
+          ),
+          _SubNavItem(
+            label: 'Results Integration Week',
+            selected:
+                selectedSection == AppSection.sprints && sprintWeekIndex == 8,
+            onTap: () => widget.onSprintWeekSelected(weekIndex: 8),
           ),
         ],
         _NavItem(

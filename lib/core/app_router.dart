@@ -74,7 +74,7 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   DateTime? _dailyDate;
   DateTime? _weeklyStart;
   DateTime? _monthlyStart;
-  int? _sprintWeekIndex;
+  int _sprintWeekIndex = 0;
 
   @override
   GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -104,7 +104,7 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   }
 
   void routeToSprints({int? weekIndex}) {
-    _sprintWeekIndex = weekIndex;
+    _sprintWeekIndex = weekIndex ?? 0;
     _section = AppSection.sprints;
     notifyListeners();
   }
@@ -124,7 +124,7 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     _dailyDate = configuration.dailyDate ?? _dailyDate;
     _weeklyStart = configuration.weekStart ?? _weeklyStart;
     _monthlyStart = configuration.month ?? _monthlyStart;
-    _sprintWeekIndex = configuration.sprintWeekIndex ?? _sprintWeekIndex;
+    _sprintWeekIndex = configuration.sprintWeekIndex ?? 0;
   }
 
   @override
@@ -232,7 +232,7 @@ DateTime? _parseMonthKey(String? value) {
 int? _parseSprintWeek(String? value) {
   if (value == null || value.isEmpty) return null;
   final parsed = int.tryParse(value);
-  if (parsed == null || parsed < 1 || parsed > 4) return null;
+  if (parsed == null || parsed < 0 || parsed > 8) return null;
   return parsed;
 }
 

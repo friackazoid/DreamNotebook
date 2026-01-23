@@ -4,12 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/sprint.dart';
 import '../../models/sprint_week_plan.dart';
+import '../../models/sprint_week_results.dart';
 
 abstract class SprintRepository {
   Future<List<Sprint>> loadSprints();
   Future<void> saveSprints(List<Sprint> sprints);
   Future<SprintWeekPlan> loadWeekPlan(String sprintId, int weekIndex);
   Future<void> saveWeekPlan(SprintWeekPlan plan);
+  Future<SprintWeekResults> loadWeekResults(String sprintId, int weekIndex);
+  Future<void> saveWeekResults(SprintWeekResults results);
 }
 
 class SharedPrefsSprintRepository implements SprintRepository {
@@ -84,7 +87,44 @@ class SharedPrefsSprintRepository implements SprintRepository {
     await prefs.setString(_weekStorageKey(plan.sprintId, plan.weekIndex), payload);
   }
 
+  @override
+  Future<SprintWeekResults> loadWeekResults(
+    String sprintId,
+    int weekIndex,
+  ) async {
+    final prefs = await _getPrefs();
+    final raw = prefs.getString(_resultsStorageKey(sprintId, weekIndex));
+    if (raw == null || raw.isEmpty) {
+      return SprintWeekResults(sprintId: sprintId, weekIndex: weekIndex);
+    }
+    try {
+      final jsonMap = jsonDecode(raw) as Map<String, dynamic>;
+      final results = SprintWeekResults.fromJson(jsonMap);
+      if (results.sprintId.isEmpty) {
+        return SprintWeekResults(sprintId: sprintId, weekIndex: weekIndex);
+      }
+      return results;
+    } catch (_) {
+      return SprintWeekResults(sprintId: sprintId, weekIndex: weekIndex);
+    }
+  }
+
+  @override
+  Future<void> saveWeekResults(SprintWeekResults results) async {
+    final prefs = await _getPrefs();
+    results.updatedAt = DateTime.now();
+    final payload = jsonEncode(results.toJson());
+    await prefs.setString(
+      _resultsStorageKey(results.sprintId, results.weekIndex),
+      payload,
+    );
+  }
+
   String _weekStorageKey(String sprintId, int weekIndex) {
     return 'sprint_week_${sprintId}_$weekIndex';
+  }
+
+  String _resultsStorageKey(String sprintId, int weekIndex) {
+    return 'sprint_results_${sprintId}_$weekIndex';
   }
 }

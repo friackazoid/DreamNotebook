@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import '../../../core/storage/sprint_repository.dart';
 import '../../../models/sprint.dart';
 import '../../../models/sprint_week_plan.dart';
+import '../../../models/sprint_week_results.dart';
 import '../widgets/sprint_table_layout.dart';
+import '../widgets/sprint_week_results_page.dart';
 import '../widgets/week_schedule_widgets.dart';
 
 class SprintProjectsTab extends StatefulWidget {
@@ -30,8 +32,10 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
   bool _loading = true;
   Timer? _debounce;
   SprintWeekPlan? _weekPlan;
+  SprintWeekResults? _weekResults;
   bool _weekLoading = false;
-  Timer? _weekDebounce;
+  Timer? _weekPlanDebounce;
+  Timer? _weekResultsDebounce;
 
   @override
   void initState() {
@@ -46,6 +50,7 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
     super.didUpdateWidget(oldWidget);
     if (widget.weekIndex != oldWidget.weekIndex) {
       _saveWeekPlan();
+      _saveWeekResults();
       _loadWeekPlanIfNeeded();
     }
   }
@@ -53,8 +58,10 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
   @override
   void dispose() {
     _debounce?.cancel();
-    _weekDebounce?.cancel();
+    _weekPlanDebounce?.cancel();
+    _weekResultsDebounce?.cancel();
     _saveWeekPlan();
+    _saveWeekResults();
     _saveSprints();
     _titleController.dispose();
     super.dispose();
@@ -176,6 +183,7 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
 
   void _setCurrentIndex(int index) {
     _saveWeekPlan();
+    _saveWeekResults();
     setState(() {
       _currentIndex = index;
       _titleController.text = _sprints[_currentIndex].title;
@@ -270,13 +278,22 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
         ],
       );
     }
-    if (_weekLoading || _weekPlan == null) {
+    if (_weekLoading || _weekPlan == null || _weekResults == null) {
       return const Center(child: CircularProgressIndicator());
+    }
+    final selection = _weekSelection(widget.weekIndex);
+    if (selection.isResults) {
+      return _buildResultsContent(
+        sprint,
+        _weekResults!,
+        selection.weekIndex,
+        isEditable,
+      );
     }
     return _buildWeekContent(
       sprint,
       _weekPlan!,
-      widget.weekIndex,
+      selection.weekIndex,
       isEditable,
     );
   }
@@ -328,19 +345,38 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
 
   void _onWeekPlanChanged() {
     setState(() {});
-    _scheduleWeekSave();
+    _scheduleWeekPlanSave();
   }
 
-  void _scheduleWeekSave() {
-    _weekDebounce?.cancel();
-    _weekDebounce = Timer(const Duration(milliseconds: 600), _saveWeekPlan);
+  void _onWeekResultsChanged() {
+    setState(() {});
+    _scheduleWeekResultsSave();
+  }
+
+  void _scheduleWeekPlanSave() {
+    _weekPlanDebounce?.cancel();
+    _weekPlanDebounce =
+        Timer(const Duration(milliseconds: 600), _saveWeekPlan);
   }
 
   Future<void> _saveWeekPlan() async {
-    _weekDebounce?.cancel();
+    _weekPlanDebounce?.cancel();
     final plan = _weekPlan;
     if (plan == null) return;
     await _repository.saveWeekPlan(plan);
+  }
+
+  void _scheduleWeekResultsSave() {
+    _weekResultsDebounce?.cancel();
+    _weekResultsDebounce =
+        Timer(const Duration(milliseconds: 600), _saveWeekResults);
+  }
+
+  Future<void> _saveWeekResults() async {
+    _weekResultsDebounce?.cancel();
+    final results = _weekResults;
+    if (results == null) return;
+    await _repository.saveWeekResults(results);
   }
 
   Future<void> _loadWeekPlanIfNeeded() async {
@@ -348,22 +384,49 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
     if (sprint.status == SprintStatus.planned || widget.weekIndex == 0) {
       setState(() {
         _weekPlan = null;
+        _weekResults = null;
         _weekLoading = false;
       });
       return;
     }
-    await _loadWeekPlan(widget.weekIndex);
+    final selection = _weekSelection(widget.weekIndex);
+    await _loadWeekData(selection.weekIndex);
   }
 
-  Future<void> _loadWeekPlan(int weekIndex) async {
+  Future<void> _loadWeekData(int weekIndex) async {
     setState(() => _weekLoading = true);
     final sprint = _sprints[_currentIndex];
     final plan = await _repository.loadWeekPlan(sprint.id, weekIndex);
+    final results = await _repository.loadWeekResults(sprint.id, weekIndex);
     if (!mounted) return;
     setState(() {
       _weekPlan = plan;
+      _weekResults = results;
       _weekLoading = false;
     });
+  }
+
+  Widget _buildResultsContent(
+    Sprint sprint,
+    SprintWeekResults results,
+    int weekIndex,
+    bool isEditable,
+  ) {
+    final range = _weekRange(sprint.startDate, weekIndex);
+    final isIntegration = weekIndex == 4;
+    final title = isIntegration
+        ? 'INTEGRATION WEEK RESULTS'
+        : 'WEEK #$weekIndex RESULTS';
+    final subtitle =
+        '${isIntegration ? 'Integration Week' : 'Week #$weekIndex'} '
+        '(${_formatShortDate(range.start)}–${_formatShortDate(range.end)})';
+    return SprintWeekResultsPage(
+      title: title,
+      subtitle: subtitle,
+      results: results,
+      isEditable: isEditable,
+      onChanged: _onWeekResultsChanged,
+    );
   }
 
 }
@@ -427,4 +490,28 @@ class _WeekRange {
 
   final DateTime start;
   final DateTime end;
+}
+
+class _WeekSelection {
+  const _WeekSelection({
+    required this.weekIndex,
+    required this.isResults,
+  });
+
+  final int weekIndex;
+  final bool isResults;
+}
+
+_WeekSelection _weekSelection(int sidebarIndex) {
+  return switch (sidebarIndex) {
+    1 => const _WeekSelection(weekIndex: 1, isResults: false),
+    2 => const _WeekSelection(weekIndex: 1, isResults: true),
+    3 => const _WeekSelection(weekIndex: 2, isResults: false),
+    4 => const _WeekSelection(weekIndex: 2, isResults: true),
+    5 => const _WeekSelection(weekIndex: 3, isResults: false),
+    6 => const _WeekSelection(weekIndex: 3, isResults: true),
+    7 => const _WeekSelection(weekIndex: 4, isResults: false),
+    8 => const _WeekSelection(weekIndex: 4, isResults: true),
+    _ => const _WeekSelection(weekIndex: 1, isResults: false),
+  };
 }
