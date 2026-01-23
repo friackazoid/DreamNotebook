@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/storage/sprint_repository.dart';
+import '../../../core/storage/daily_plan_repository.dart';
+import '../../../models/daily_plan.dart';
 import '../../../models/sprint.dart';
 import '../../../models/sprint_week_plan.dart';
 import '../../../models/sprint_week_results.dart';
 import '../widgets/sprint_table_layout.dart';
 import '../widgets/sprint_week_results_page.dart';
+import '../widgets/weekly_load_bar.dart';
 import '../widgets/week_schedule_widgets.dart';
 
 class SprintProjectsTab extends StatefulWidget {
@@ -26,6 +29,7 @@ class SprintProjectsTab extends StatefulWidget {
 
 class _SprintProjectsTabState extends State<SprintProjectsTab> {
   late final SprintRepository _repository;
+  late final DailyPlanRepository _dailyRepository;
   late final TextEditingController _titleController;
   List<Sprint> _sprints = [];
   int _currentIndex = 0;
@@ -36,11 +40,13 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
   bool _weekLoading = false;
   Timer? _weekPlanDebounce;
   Timer? _weekResultsDebounce;
+  List<double> _dailyBusyLoads = List<double>.filled(7, 0);
 
   @override
   void initState() {
     super.initState();
     _repository = widget.repository ?? SharedPrefsSprintRepository();
+    _dailyRepository = SharedPrefsDailyPlanRepository();
     _titleController = TextEditingController();
     _loadSprints();
   }
@@ -317,6 +323,11 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          WeeklyLoadBar(
+            dailyLoads: _computeDailyLoads(plan, _dailyBusyLoads),
+            labels: _dayLabels,
+          ),
+          const SizedBox(height: 16),
           TaskTableSection(
             title: isIntegration ? 'TASKS' : 'SPRINT TASKS',
             rows: plan.sprintTasks,
@@ -398,10 +409,13 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
     final sprint = _sprints[_currentIndex];
     final plan = await _repository.loadWeekPlan(sprint.id, weekIndex);
     final results = await _repository.loadWeekResults(sprint.id, weekIndex);
+    final busyLoads =
+        await _loadDailyBusyLoads(_dailyRepository, sprint.startDate, weekIndex);
     if (!mounted) return;
     setState(() {
       _weekPlan = plan;
       _weekResults = results;
+      _dailyBusyLoads = busyLoads;
       _weekLoading = false;
     });
   }
@@ -514,4 +528,75 @@ _WeekSelection _weekSelection(int sidebarIndex) {
     8 => const _WeekSelection(weekIndex: 4, isResults: true),
     _ => const _WeekSelection(weekIndex: 1, isResults: false),
   };
+}
+
+List<double> _computeDailyLoads(SprintWeekPlan plan, List<double> busyLoads) {
+  // Load is defined as the sum of numeric day marks per day plus busy hours from daily plans.
+  final totals = List<double>.filled(7, 0);
+  for (final row in [...plan.sprintTasks, ...plan.otherTasks]) {
+    for (var i = 0; i < row.dayMarks.length; i++) {
+      totals[i] += row.dayMarks[i];
+    }
+  }
+  for (var i = 0; i < totals.length && i < busyLoads.length; i++) {
+    totals[i] += busyLoads[i];
+  }
+  return totals;
+}
+
+const List<String> _dayLabels = [
+  'Mon',
+  'Tue',
+  'Wed',
+  'Thu',
+  'Fri',
+  'Sat',
+  'Sun',
+];
+
+Future<List<double>> _loadDailyBusyLoads(
+  DailyPlanRepository repository,
+  DateTime sprintStart,
+  int weekIndex,
+) async {
+  final start = sprintStart.add(Duration(days: (weekIndex - 1) * 7));
+  final days = List.generate(7, (index) => start.add(Duration(days: index)));
+  final plans = await Future.wait(
+    days.map((day) => repository.loadPlan(_dateKey(day))),
+  );
+  return _calculateDailyBusyLoads(plans);
+}
+
+List<double> _calculateDailyBusyLoads(List<DailyPlan> plans) {
+  const hoursPerDay = 24;
+  const sleepStartHour = 20;
+  const sleepEndHour = 6;
+  final loads = <double>[];
+  for (final plan in plans) {
+    final busyHours = <int>{};
+    for (final entry in plan.hourlyNotes.entries) {
+      if (entry.value.trim().isEmpty) continue;
+      final hour = entry.key.clamp(0, hoursPerDay - 1);
+      if (hour >= sleepEndHour && hour < sleepStartHour) {
+        busyHours.add(hour);
+      }
+    }
+    for (final event in plan.events) {
+      final start = event.startHour.clamp(0, hoursPerDay);
+      final end = event.endHour.clamp(0, hoursPerDay);
+      for (var hour = start; hour < end; hour++) {
+        if (hour >= sleepEndHour && hour < sleepStartHour) {
+          busyHours.add(hour);
+        }
+      }
+    }
+    loads.add(busyHours.length.toDouble());
+  }
+  return loads;
+}
+
+String _dateKey(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
 }

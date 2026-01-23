@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/app_router.dart';
 import '../../../core/quick_note_helpers.dart';
-import '../../../core/storage/daily_plan_repository.dart';
 import '../../../core/storage/weekly_plan_repository.dart';
-import '../../../models/daily_plan.dart';
 import '../../../models/weekly_plan.dart';
 import '../widgets/weekly_planner_spread.dart';
 
@@ -14,12 +12,10 @@ class WeeklyPlannerPage extends StatefulWidget {
   const WeeklyPlannerPage({
     super.key,
     this.repository,
-    this.dailyRepository,
     this.initialDate,
   });
 
   final WeeklyPlanRepository? repository;
-  final DailyPlanRepository? dailyRepository;
   final DateTime? initialDate;
 
   @override
@@ -27,30 +23,18 @@ class WeeklyPlannerPage extends StatefulWidget {
 }
 
 class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
-  static const int _hoursPerDay = 24;
-  static const int _sleepStartHour = 20;
-  static const int _sleepEndHour = 6;
-  static const int _sleepHoursPerDay = 10;
-
   late final WeeklyPlanRepository _repository;
-  late final DailyPlanRepository _dailyRepository;
   late DateTime _weekStart;
   WeeklyPlan? _plan;
   bool _loading = true;
   Timer? _debounce;
   bool _hasWeekQuickNote = false;
   Set<String> _dayQuickNotes = {};
-  int _busyHours = 0;
-  int _freeHours = _hoursPerDay * 7 - _sleepHoursPerDay * 7;
-  int _sleepHours = _sleepHoursPerDay * 7;
-  int _totalHours = _hoursPerDay * 7;
 
   @override
   void initState() {
     super.initState();
     _repository = widget.repository ?? SharedPrefsWeeklyPlanRepository();
-    _dailyRepository =
-        widget.dailyRepository ?? SharedPrefsDailyPlanRepository();
     _weekStart = _startOfWeekMonday(widget.initialDate ?? DateTime.now());
     _loadPlan();
   }
@@ -104,10 +88,6 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
                           onDaySelected: _openDaily,
                           onDayNoteSelected: _openQuickNoteForDay,
                           dayKeysWithNotes: _dayQuickNotes,
-                          busyHours: _busyHours,
-                          freeHours: _freeHours,
-                          sleepHours: _sleepHours,
-                          totalHours: _totalHours,
                         ),
                       ),
                     ],
@@ -123,15 +103,10 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
     final weekKey = _dateKey(_weekStart);
     final plan = await _repository.loadPlan(weekKey);
     _plan = plan.weekKey.isEmpty ? WeeklyPlan.empty(weekKey) : plan;
-    final hoursSummary = await _loadWeekHours(_plan!);
     await _refreshQuickNotes();
     if (!mounted) return;
     setState(() {
       _loading = false;
-      _busyHours = hoursSummary.busy;
-      _freeHours = hoursSummary.free;
-      _sleepHours = hoursSummary.sleep;
-      _totalHours = hoursSummary.total;
     });
   }
 
@@ -200,45 +175,6 @@ class _WeeklyPlannerPageState extends State<WeeklyPlannerPage> {
     });
   }
 
-  Future<_WeekHourSummary> _loadWeekHours(WeeklyPlan plan) async {
-    final dayKeys = plan.days.map((day) => day.dateKey).toList();
-    final dailyPlans =
-        await Future.wait(dayKeys.map(_dailyRepository.loadPlan));
-    final busy = _calculateBusyHours(dailyPlans);
-    final sleep = _sleepHoursPerDay * dayKeys.length;
-    final total = _hoursPerDay * dayKeys.length;
-    final free = (total - sleep - busy).clamp(0, total);
-    return _WeekHourSummary(busy: busy, free: free, sleep: sleep, total: total);
-  }
-
-  int _calculateBusyHours(List<DailyPlan> plans) {
-    var total = 0;
-    for (final plan in plans) {
-      final busyHours = <int>{};
-      for (final entry in plan.hourlyNotes.entries) {
-        if (entry.value.trim().isEmpty) continue;
-        final hour = entry.key.clamp(0, _hoursPerDay - 1);
-        if (_isAwakeHour(hour)) {
-          busyHours.add(hour);
-        }
-      }
-      for (final event in plan.events) {
-        final start = event.startHour.clamp(0, _hoursPerDay);
-        final end = event.endHour.clamp(0, _hoursPerDay);
-        for (var hour = start; hour < end; hour++) {
-          if (_isAwakeHour(hour)) {
-            busyHours.add(hour);
-          }
-        }
-      }
-      total += busyHours.length;
-    }
-    return total;
-  }
-
-  bool _isAwakeHour(int hour) {
-    return hour >= _sleepEndHour && hour < _sleepStartHour;
-  }
 }
 
 class _WeekHeader extends StatelessWidget {
@@ -342,18 +278,4 @@ bool _isThisWeek(DateTime weekStart) {
   return nowStart.year == weekStart.year &&
       nowStart.month == weekStart.month &&
       nowStart.day == weekStart.day;
-}
-
-class _WeekHourSummary {
-  const _WeekHourSummary({
-    required this.busy,
-    required this.free,
-    required this.sleep,
-    required this.total,
-  });
-
-  final int busy;
-  final int free;
-  final int sleep;
-  final int total;
 }
