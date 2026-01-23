@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/sprint.dart';
+import '../../models/sprint_week_plan.dart';
 
 abstract class SprintRepository {
   Future<List<Sprint>> loadSprints();
   Future<void> saveSprints(List<Sprint> sprints);
+  Future<SprintWeekPlan> loadWeekPlan(String sprintId, int weekIndex);
+  Future<void> saveWeekPlan(SprintWeekPlan plan);
 }
 
 class SharedPrefsSprintRepository implements SprintRepository {
@@ -53,5 +56,35 @@ class SharedPrefsSprintRepository implements SprintRepository {
     });
     await prefs.setInt(_versionKey, _schemaVersion);
     await prefs.setString(_storageKey, payload);
+  }
+
+  @override
+  Future<SprintWeekPlan> loadWeekPlan(String sprintId, int weekIndex) async {
+    final prefs = await _getPrefs();
+    final raw = prefs.getString(_weekStorageKey(sprintId, weekIndex));
+    if (raw == null || raw.isEmpty) {
+      return SprintWeekPlan(sprintId: sprintId, weekIndex: weekIndex);
+    }
+    try {
+      final jsonMap = jsonDecode(raw) as Map<String, dynamic>;
+      final plan = SprintWeekPlan.fromJson(jsonMap);
+      if (plan.sprintId.isEmpty) {
+        return SprintWeekPlan(sprintId: sprintId, weekIndex: weekIndex);
+      }
+      return plan;
+    } catch (_) {
+      return SprintWeekPlan(sprintId: sprintId, weekIndex: weekIndex);
+    }
+  }
+
+  @override
+  Future<void> saveWeekPlan(SprintWeekPlan plan) async {
+    final prefs = await _getPrefs();
+    final payload = jsonEncode(plan.toJson());
+    await prefs.setString(_weekStorageKey(plan.sprintId, plan.weekIndex), payload);
+  }
+
+  String _weekStorageKey(String sprintId, int weekIndex) {
+    return 'sprint_week_${sprintId}_$weekIndex';
   }
 }

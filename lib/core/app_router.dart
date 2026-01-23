@@ -10,12 +10,14 @@ class AppRoutePath {
     this.dailyDate,
     this.weekStart,
     this.month,
+    this.sprintWeekIndex,
   });
 
   final AppSection section;
   final DateTime? dailyDate;
   final DateTime? weekStart;
   final DateTime? month;
+  final int? sprintWeekIndex;
 }
 
 class AppRouteParser extends RouteInformationParser<AppRoutePath> {
@@ -37,7 +39,10 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
       case '/quick-note':
         return const AppRoutePath(AppSection.quickNote);
       case '/sprints':
-        return const AppRoutePath(AppSection.sprints);
+        return AppRoutePath(
+          AppSection.sprints,
+          sprintWeekIndex: _parseSprintWeek(uri.queryParameters['week']),
+        );
       case '/collections':
         return const AppRoutePath(AppSection.collections);
       case '/daily':
@@ -54,7 +59,7 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
     final location = switch (configuration.section) {
       AppSection.weekly => _weeklyLocation(configuration.weekStart),
       AppSection.monthly => _monthlyLocation(configuration.month),
-      AppSection.sprints => '/sprints',
+      AppSection.sprints => _sprintsLocation(configuration.sprintWeekIndex),
       AppSection.collections => '/collections',
       AppSection.quickNote => '/quick-note',
       AppSection.daily => _dailyLocation(configuration.dailyDate),
@@ -69,6 +74,7 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   DateTime? _dailyDate;
   DateTime? _weeklyStart;
   DateTime? _monthlyStart;
+  int? _sprintWeekIndex;
 
   @override
   GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -97,12 +103,19 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     notifyListeners();
   }
 
+  void routeToSprints({int? weekIndex}) {
+    _sprintWeekIndex = weekIndex;
+    _section = AppSection.sprints;
+    notifyListeners();
+  }
+
   @override
   AppRoutePath get currentConfiguration => AppRoutePath(
         _section,
         dailyDate: _dailyDate,
         weekStart: _weeklyStart,
         month: _monthlyStart,
+        sprintWeekIndex: _sprintWeekIndex,
       );
 
   @override
@@ -111,6 +124,7 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     _dailyDate = configuration.dailyDate ?? _dailyDate;
     _weeklyStart = configuration.weekStart ?? _weeklyStart;
     _monthlyStart = configuration.month ?? _monthlyStart;
+    _sprintWeekIndex = configuration.sprintWeekIndex ?? _sprintWeekIndex;
   }
 
   @override
@@ -125,6 +139,8 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
             dailyDate: _dailyDate,
             weeklyDate: _weeklyStart,
             monthlyDate: _monthlyStart,
+            sprintWeekIndex: _sprintWeekIndex,
+            onSprintWeekSelected: routeToSprints,
           ),
         ),
       ],
@@ -162,6 +178,13 @@ void routeToMonthly(BuildContext context, DateTime anyDay) {
   }
 }
 
+void routeToSprints(BuildContext context, {int? weekIndex}) {
+  final delegate = Router.of(context).routerDelegate;
+  if (delegate is AppRouterDelegate) {
+    delegate.routeToSprints(weekIndex: weekIndex);
+  }
+}
+
 String _dailyLocation(DateTime? date) {
   if (date == null) return '/daily';
   final key = _dateKey(date);
@@ -178,6 +201,11 @@ String _monthlyLocation(DateTime? month) {
   if (month == null) return '/monthly';
   final key = _monthKey(DateTime(month.year, month.month, 1));
   return '/monthly?month=$key';
+}
+
+String _sprintsLocation(int? weekIndex) {
+  if (weekIndex == null || weekIndex == 0) return '/sprints';
+  return '/sprints?week=$weekIndex';
 }
 
 DateTime? _parseDateKey(String? value) {
@@ -199,6 +227,13 @@ DateTime? _parseMonthKey(String? value) {
   final month = int.tryParse(parts[1]);
   if (year == null || month == null) return null;
   return DateTime(year, month, 1);
+}
+
+int? _parseSprintWeek(String? value) {
+  if (value == null || value.isEmpty) return null;
+  final parsed = int.tryParse(value);
+  if (parsed == null || parsed < 1 || parsed > 4) return null;
+  return parsed;
 }
 
 DateTime _normalizeDate(DateTime date) {

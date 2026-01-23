@@ -4,12 +4,19 @@ import 'package:flutter/material.dart';
 
 import '../../../core/storage/sprint_repository.dart';
 import '../../../models/sprint.dart';
+import '../../../models/sprint_week_plan.dart';
 import '../widgets/sprint_table_layout.dart';
+import '../widgets/week_schedule_widgets.dart';
 
 class SprintProjectsTab extends StatefulWidget {
-  const SprintProjectsTab({super.key, this.repository});
+  const SprintProjectsTab({
+    super.key,
+    this.repository,
+    this.weekIndex = 0,
+  });
 
   final SprintRepository? repository;
+  final int weekIndex;
 
   @override
   State<SprintProjectsTab> createState() => _SprintProjectsTabState();
@@ -22,6 +29,9 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
   int _currentIndex = 0;
   bool _loading = true;
   Timer? _debounce;
+  SprintWeekPlan? _weekPlan;
+  bool _weekLoading = false;
+  Timer? _weekDebounce;
 
   @override
   void initState() {
@@ -32,8 +42,19 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
   }
 
   @override
+  void didUpdateWidget(covariant SprintProjectsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.weekIndex != oldWidget.weekIndex) {
+      _saveWeekPlan();
+      _loadWeekPlanIfNeeded();
+    }
+  }
+
+  @override
   void dispose() {
     _debounce?.cancel();
+    _weekDebounce?.cancel();
+    _saveWeekPlan();
     _saveSprints();
     _titleController.dispose();
     super.dispose();
@@ -110,12 +131,7 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: SprintTableLayout(
-              key: ValueKey(sprint.id),
-              sprint: sprint,
-              isEditable: isEditable,
-              onChanged: _onSprintChanged,
-            ),
+            child: _buildContentArea(sprint, isEditable),
           ),
         ),
       ],
@@ -132,6 +148,7 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
     _sprints = loaded;
     _currentIndex = _indexToShow(loaded);
     _titleController.text = _sprints[_currentIndex].title;
+    await _loadWeekPlanIfNeeded();
     setState(() => _loading = false);
     _saveSprints();
   }
@@ -158,10 +175,12 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
   }
 
   void _setCurrentIndex(int index) {
+    _saveWeekPlan();
     setState(() {
       _currentIndex = index;
       _titleController.text = _sprints[_currentIndex].title;
     });
+    _loadWeekPlanIfNeeded();
   }
 
   void _onTitleChanged(String value) {
@@ -183,12 +202,13 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
         entry.status = SprintStatus.archived;
       }
     }
-    final startDate = _normalizeDate(DateTime.now());
+    final startDate = _nextMonday(_normalizeDate(DateTime.now()));
     sprint.status = SprintStatus.current;
     sprint.startDate = startDate;
     sprint.endDate = startDate.add(const Duration(days: 28));
     _scheduleSave();
     setState(() {});
+    _loadWeekPlanIfNeeded();
   }
 
   void _goToPreviousSprint() {
@@ -227,10 +247,141 @@ class _SprintProjectsTabState extends State<SprintProjectsTab> {
     _debounce?.cancel();
     await _repository.saveSprints(_sprints);
   }
+
+  Widget _buildContentArea(Sprint sprint, bool isEditable) {
+    if (widget.weekIndex == 0 || sprint.status == SprintStatus.planned) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SprintTableLayout(
+            key: ValueKey(sprint.id),
+            sprint: sprint,
+            isEditable: isEditable,
+            onChanged: _onSprintChanged,
+          ),
+          const SizedBox(height: 24),
+          if (sprint.status == SprintStatus.planned)
+            Text(
+              'Start the sprint to unlock weekly schedules.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).hintColor,
+                  ),
+            ),
+        ],
+      );
+    }
+    if (_weekLoading || _weekPlan == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return _buildWeekContent(
+      sprint,
+      _weekPlan!,
+      widget.weekIndex,
+      isEditable,
+    );
+  }
+
+  Widget _buildWeekContent(
+    Sprint sprint,
+    SprintWeekPlan plan,
+    int weekIndex,
+    bool isEditable,
+  ) {
+    final range = _weekRange(sprint.startDate, weekIndex);
+    final isIntegration = weekIndex == 4;
+    final title =
+        isIntegration ? 'INTEGRATION WEEK' : 'WEEK #$weekIndex';
+    final subtitle =
+        '${isIntegration ? 'Integration Week' : 'Week #$weekIndex'} '
+        '(${_formatShortDate(range.start)}–${_formatShortDate(range.end)})';
+    return WeekSchedulePageBase(
+      title: title,
+      subtitle: subtitle,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TaskTableSection(
+            title: isIntegration ? 'TASKS' : 'SPRINT TASKS',
+            rows: plan.sprintTasks,
+            isEditable: isEditable,
+            onChanged: _onWeekPlanChanged,
+          ),
+          if (!isIntegration) ...[
+            const SizedBox(height: 16),
+            TaskTableSection(
+              title: 'OTHER TASKS',
+              rows: plan.otherTasks,
+              isEditable: isEditable,
+              onChanged: _onWeekPlanChanged,
+            ),
+          ],
+          const SizedBox(height: 16),
+          StateTrackerSection(
+            stateTracker: plan.stateTracker,
+            isEditable: isEditable,
+            onChanged: _onWeekPlanChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onWeekPlanChanged() {
+    setState(() {});
+    _scheduleWeekSave();
+  }
+
+  void _scheduleWeekSave() {
+    _weekDebounce?.cancel();
+    _weekDebounce = Timer(const Duration(milliseconds: 600), _saveWeekPlan);
+  }
+
+  Future<void> _saveWeekPlan() async {
+    _weekDebounce?.cancel();
+    final plan = _weekPlan;
+    if (plan == null) return;
+    await _repository.saveWeekPlan(plan);
+  }
+
+  Future<void> _loadWeekPlanIfNeeded() async {
+    final sprint = _sprints[_currentIndex];
+    if (sprint.status == SprintStatus.planned || widget.weekIndex == 0) {
+      setState(() {
+        _weekPlan = null;
+        _weekLoading = false;
+      });
+      return;
+    }
+    await _loadWeekPlan(widget.weekIndex);
+  }
+
+  Future<void> _loadWeekPlan(int weekIndex) async {
+    setState(() => _weekLoading = true);
+    final sprint = _sprints[_currentIndex];
+    final plan = await _repository.loadWeekPlan(sprint.id, weekIndex);
+    if (!mounted) return;
+    setState(() {
+      _weekPlan = plan;
+      _weekLoading = false;
+    });
+  }
+
 }
 
 DateTime _normalizeDate(DateTime date) {
   return DateTime(date.year, date.month, date.day);
+}
+
+DateTime _nextMonday(DateTime date) {
+  final weekday = date.weekday;
+  final offset = weekday == DateTime.monday ? 0 : (8 - weekday);
+  return date.add(Duration(days: offset));
+}
+
+_WeekRange _weekRange(DateTime sprintStart, int weekIndex) {
+  final start = sprintStart.add(Duration(days: (weekIndex - 1) * 7));
+  final end = start.add(const Duration(days: 6));
+  return _WeekRange(start: start, end: end);
 }
 
 String _formatDate(DateTime date) {
@@ -250,4 +401,30 @@ String _formatDate(DateTime date) {
   ];
   final month = monthNames[date.month - 1];
   return '$month ${date.day}, ${date.year}';
+}
+
+String _formatShortDate(DateTime date) {
+  const monthNames = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final month = monthNames[date.month - 1];
+  return '$month ${date.day}';
+}
+
+class _WeekRange {
+  const _WeekRange({required this.start, required this.end});
+
+  final DateTime start;
+  final DateTime end;
 }
