@@ -2,12 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../core/planner_sync_service.dart';
 import '../../../core/quick_note_helpers.dart';
 import '../../../core/storage/daily_plan_repository.dart';
-import '../../../core/storage/weekly_plan_repository.dart';
 import '../../../models/daily_plan.dart';
-import '../../../models/weekly_plan.dart';
 
 class DailyPlannerPage extends StatefulWidget {
   const DailyPlannerPage({
@@ -30,12 +27,8 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   static const _endHour = 22;
 
   late final DailyPlanRepository _dailyRepository;
-  late final WeeklyPlanRepository _weeklyRepository;
-  late final PlannerSyncService _syncService;
   late DateTime _currentDate;
   DailyPlan? _plan;
-  WeeklyPlan? _weeklyPlan;
-  List<WeeklyTodo> _weeklyTodosForDay = [];
   bool _loading = true;
   bool _hasQuickNote = false;
   Timer? _debounce;
@@ -48,11 +41,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
   void initState() {
     super.initState();
     _dailyRepository = widget.repository ?? SharedPrefsDailyPlanRepository();
-    _weeklyRepository = SharedPrefsWeeklyPlanRepository();
-    _syncService = PlannerSyncService(
-      dailyRepository: _dailyRepository,
-      weeklyRepository: _weeklyRepository,
-    );
     _currentDate = _normalizeDate(
       widget.initialDate ??
           _parseDateKey(widget.initialDateKey) ??
@@ -74,6 +62,7 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
 
   @override
   void dispose() {
+    _saveCurrentPlan();
     _debounce?.cancel();
     super.dispose();
   }
@@ -113,14 +102,6 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
                       onDragUpdate: _onDragUpdate,
                       onDragEnd: _onDragEnd,
                     ),
-                    const SizedBox(height: 16),
-                    _WeeklyTodoSection(
-                      weeklyTodos: _weeklyTodosForDay,
-                      mirrors: _plan?.weeklyTodos ?? {},
-                      onToggleParent: _onWeeklyParentToggled,
-                      onSubTaskChanged: _onWeeklySubTaskChanged,
-                      onSubTaskToggle: _onWeeklySubTaskToggled,
-                    ),
                   ],
                 ),
               ),
@@ -130,10 +111,7 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
 
   Future<void> _loadPlanForDate(DateTime date) async {
     setState(() => _loading = true);
-    final result = await _syncService.loadDailyWithWeekly(date);
-    _plan = result.dailyPlan;
-    _weeklyPlan = result.weeklyPlan;
-    _weeklyTodosForDay = result.weeklyTodosForDay;
+    _plan = await _dailyRepository.loadPlan(_dateKey(date));
     await _refreshQuickNoteIndicator();
     setState(() => _loading = false);
   }
@@ -177,61 +155,7 @@ class _DailyPlannerPageState extends State<DailyPlannerPage> {
     _debounce?.cancel();
     final plan = _plan;
     if (plan == null) return;
-    await _syncService.saveDaily(plan);
-    final weeklyPlan = _weeklyPlan;
-    if (weeklyPlan != null) {
-      await _syncService.saveWeekly(weeklyPlan);
-    }
-  }
-
-  void _onWeeklyParentToggled(String todoId, bool value) {
-    final weeklyPlan = _weeklyPlan;
-    if (weeklyPlan == null) return;
-    for (final day in weeklyPlan.days) {
-      for (final todo in day.mits) {
-        if (todo.id == todoId) {
-          setState(() => todo.done = value);
-          _scheduleAutoSave();
-          return;
-        }
-      }
-    }
-  }
-
-  void _onWeeklySubTaskChanged(
-    String todoId,
-    int subTaskIndex,
-    String value,
-  ) {
-    final plan = _plan;
-    if (plan == null) return;
-    final mirror = plan.weeklyTodos.putIfAbsent(
-      todoId,
-      () => WeeklyTodoMirror(weeklyTodoId: todoId),
-    );
-    mirror.subTasks[subTaskIndex].text = value;
-    _scheduleAutoSave();
-  }
-
-  void _onWeeklySubTaskToggled(
-    String todoId,
-    int subTaskIndex,
-    bool value,
-  ) {
-    final plan = _plan;
-    if (plan == null) return;
-    final mirror = plan.weeklyTodos.putIfAbsent(
-      todoId,
-      () => WeeklyTodoMirror(weeklyTodoId: todoId),
-    );
-    mirror.subTasks[subTaskIndex].done = value;
-
-    // Sync rule B: if both subtasks are done, mark the weekly todo done.
-    // We do not auto-uncheck weekly todos when subtasks are incomplete.
-    if (mirror.subTasks.every((task) => task.done)) {
-      _onWeeklyParentToggled(todoId, true);
-    }
-    _scheduleAutoSave();
+    await _dailyRepository.savePlan(plan);
   }
 
   void _onHourTap(int hour) {
@@ -466,6 +390,7 @@ class _ScheduleSection extends StatelessWidget {
                     isDragging,
                   );
                   final isCovered = event != null;
+                  const busyHourColor = Color(0xFFFF6163);
                   return _HourRow(
                     hourLabel: _formatHour(hour),
                     labelWidth: labelWidth,
@@ -476,10 +401,12 @@ class _ScheduleSection extends StatelessWidget {
                             .colorScheme
                             .primary
                             .withOpacity(0.12)
-                        : Theme.of(context)
-                            .colorScheme
-                            .surfaceVariant
-                            .withOpacity(0.5),
+                        : (isCovered
+                            ? busyHourColor
+                            : Theme.of(context)
+                                .colorScheme
+                                .surfaceVariant
+                                .withOpacity(0.5)),
                     title: event?.title ?? '',
                     onTap: () {
                       if (event != null) {
@@ -494,161 +421,6 @@ class _ScheduleSection extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _WeeklyTodoSection extends StatelessWidget {
-  const _WeeklyTodoSection({
-    required this.weeklyTodos,
-    required this.mirrors,
-    required this.onToggleParent,
-    required this.onSubTaskChanged,
-    required this.onSubTaskToggle,
-  });
-
-  final List<WeeklyTodo> weeklyTodos;
-  final Map<String, WeeklyTodoMirror> mirrors;
-  final void Function(String todoId, bool value) onToggleParent;
-  final void Function(String todoId, int index, String value) onSubTaskChanged;
-  final void Function(String todoId, int index, bool value) onSubTaskToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    if (weeklyTodos.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return _SectionCard(
-      title: 'From Weekly Plan',
-      child: Column(
-        children: weeklyTodos.map((todo) {
-          final mirror = mirrors[todo.id] ??
-              WeeklyTodoMirror(weeklyTodoId: todo.id);
-          return _WeeklyTodoBlock(
-            key: ValueKey(todo.id),
-            todo: todo,
-            mirror: mirror,
-            onToggleParent: (value) => onToggleParent(todo.id, value),
-            onSubTaskChanged: onSubTaskChanged,
-            onSubTaskToggle: onSubTaskToggle,
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-class _WeeklyTodoBlock extends StatelessWidget {
-  const _WeeklyTodoBlock({
-    super.key,
-    required this.todo,
-    required this.mirror,
-    required this.onToggleParent,
-    required this.onSubTaskChanged,
-    required this.onSubTaskToggle,
-  });
-
-  final WeeklyTodo todo;
-  final WeeklyTodoMirror mirror;
-  final ValueChanged<bool> onToggleParent;
-  final void Function(String todoId, int index, String value) onSubTaskChanged;
-  final void Function(String todoId, int index, bool value) onSubTaskToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: theme.dividerColor),
-        ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Checkbox(
-                value: todo.done,
-                onChanged: (value) => onToggleParent(value ?? false),
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  todo.text,
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          ...List.generate(2, (index) {
-            final subTask = mirror.subTasks[index];
-            return _SubTaskRow(
-              key: ValueKey('${todo.id}-$index'),
-              checked: subTask.done,
-              text: subTask.text,
-              onToggle: (value) => onSubTaskToggle(todo.id, index, value),
-              onChanged: (value) => onSubTaskChanged(todo.id, index, value),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
-
-class _SubTaskRow extends StatelessWidget {
-  const _SubTaskRow({
-    super.key,
-    required this.checked,
-    required this.text,
-    required this.onToggle,
-    required this.onChanged,
-  });
-
-  final bool checked;
-  final String text;
-  final ValueChanged<bool> onToggle;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: theme.dividerColor),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      margin: const EdgeInsets.only(left: 28),
-      child: Row(
-        children: [
-          Checkbox(
-            value: checked,
-            onChanged: (value) => onToggle(value ?? false),
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: TextFormField(
-              maxLines: 1,
-              initialValue: text,
-              style: theme.textTheme.bodySmall,
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-              ),
-              onChanged: onChanged,
-            ),
-          ),
-        ],
       ),
     );
   }
