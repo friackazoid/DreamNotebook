@@ -1,1 +1,1 @@
-enum PlannerType { daily, weekly, monthly }
+enum PlannerType { daily, monthly }

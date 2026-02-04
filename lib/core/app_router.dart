@@ -2,20 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../pages/home_shell_page.dart';
 
-enum AppSection { daily, weekly, monthly, sprints, collections, quickNote }
+enum AppSection { daily, monthly, sprints, collections, quickNote }
 
 class AppRoutePath {
   const AppRoutePath(
     this.section, {
     this.dailyDate,
-    this.weekStart,
     this.month,
     this.sprintWeekIndex,
   });
 
   final AppSection section;
   final DateTime? dailyDate;
-  final DateTime? weekStart;
   final DateTime? month;
   final int? sprintWeekIndex;
 }
@@ -26,11 +24,6 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
       RouteInformation routeInformation) async {
     final uri = Uri.parse(routeInformation.location ?? '/daily');
     switch (uri.path) {
-      case '/weekly':
-        return AppRoutePath(
-          AppSection.weekly,
-          weekStart: _parseDateKey(uri.queryParameters['start']),
-        );
       case '/monthly':
         return AppRoutePath(
           AppSection.monthly,
@@ -57,7 +50,6 @@ class AppRouteParser extends RouteInformationParser<AppRoutePath> {
   @override
   RouteInformation? restoreRouteInformation(AppRoutePath configuration) {
     final location = switch (configuration.section) {
-      AppSection.weekly => _weeklyLocation(configuration.weekStart),
       AppSection.monthly => _monthlyLocation(configuration.month),
       AppSection.sprints => _sprintsLocation(configuration.sprintWeekIndex),
       AppSection.collections => '/collections',
@@ -72,7 +64,6 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     with ChangeNotifier, PopNavigatorRouterDelegateMixin<AppRoutePath> {
   AppSection _section = AppSection.daily;
   DateTime? _dailyDate;
-  DateTime? _weeklyStart;
   DateTime? _monthlyStart;
   int _sprintWeekIndex = 0;
 
@@ -88,12 +79,6 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   void routeToDaily(DateTime date) {
     _dailyDate = _normalizeDate(date);
     _section = AppSection.daily;
-    notifyListeners();
-  }
-
-  void routeToWeekly(DateTime anyDay) {
-    _weeklyStart = _startOfWeekMonday(anyDay);
-    _section = AppSection.weekly;
     notifyListeners();
   }
 
@@ -113,7 +98,6 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   AppRoutePath get currentConfiguration => AppRoutePath(
         _section,
         dailyDate: _dailyDate,
-        weekStart: _weeklyStart,
         month: _monthlyStart,
         sprintWeekIndex: _sprintWeekIndex,
       );
@@ -122,7 +106,6 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   Future<void> setNewRoutePath(AppRoutePath configuration) async {
     _section = configuration.section;
     _dailyDate = configuration.dailyDate ?? _dailyDate;
-    _weeklyStart = configuration.weekStart ?? _weeklyStart;
     _monthlyStart = configuration.month ?? _monthlyStart;
     _sprintWeekIndex = configuration.sprintWeekIndex ?? 0;
   }
@@ -137,7 +120,6 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
             section: _section,
             onSectionSelected: setSection,
             dailyDate: _dailyDate,
-            weeklyDate: _weeklyStart,
             monthlyDate: _monthlyStart,
             sprintWeekIndex: _sprintWeekIndex,
             onSprintWeekSelected: routeToSprints,
@@ -164,13 +146,6 @@ void routeToDaily(BuildContext context, DateTime date) {
   }
 }
 
-void routeToWeekly(BuildContext context, DateTime anyDay) {
-  final delegate = Router.of(context).routerDelegate;
-  if (delegate is AppRouterDelegate) {
-    delegate.routeToWeekly(anyDay);
-  }
-}
-
 void routeToMonthly(BuildContext context, DateTime anyDay) {
   final delegate = Router.of(context).routerDelegate;
   if (delegate is AppRouterDelegate) {
@@ -189,12 +164,6 @@ String _dailyLocation(DateTime? date) {
   if (date == null) return '/daily';
   final key = _dateKey(date);
   return '/daily?date=$key';
-}
-
-String _weeklyLocation(DateTime? start) {
-  if (start == null) return '/weekly';
-  final key = _dateKey(_startOfWeekMonday(start));
-  return '/weekly?start=$key';
 }
 
 String _monthlyLocation(DateTime? month) {
@@ -238,12 +207,6 @@ int? _parseSprintWeek(String? value) {
 
 DateTime _normalizeDate(DateTime date) {
   return DateTime(date.year, date.month, date.day);
-}
-
-DateTime _startOfWeekMonday(DateTime date) {
-  final normalized = _normalizeDate(date);
-  final diff = normalized.weekday - DateTime.monday;
-  return normalized.subtract(Duration(days: diff));
 }
 
 String _dateKey(DateTime date) {

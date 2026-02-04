@@ -4,7 +4,6 @@ import '../core/app_router.dart';
 import '../features/collections/pages/collections_page.dart';
 import '../features/planner/pages/daily_planner_page.dart';
 import '../features/planner/pages/monthly_planner_page.dart';
-import '../features/planner/pages/weekly_planner_page.dart';
 import '../features/sprints/pages/sprint_projects_tab.dart';
 import 'quick_note_tab_page.dart';
 
@@ -14,7 +13,6 @@ class HomeShellPage extends StatefulWidget {
     required this.section,
     required this.onSectionSelected,
     this.dailyDate,
-    this.weeklyDate,
     this.monthlyDate,
     this.sprintWeekIndex,
     required this.onSprintWeekSelected,
@@ -23,7 +21,6 @@ class HomeShellPage extends StatefulWidget {
   final AppSection section;
   final ValueChanged<AppSection> onSectionSelected;
   final DateTime? dailyDate;
-  final DateTime? weeklyDate;
   final DateTime? monthlyDate;
   final int? sprintWeekIndex;
   final void Function({int? weekIndex}) onSprintWeekSelected;
@@ -91,12 +88,6 @@ class _HomeShellPageState extends State<HomeShellPage> {
           icon: Icons.today_outlined,
           selected: selectedSection == AppSection.daily,
           onTap: () => widget.onSectionSelected(AppSection.daily),
-        ),
-        _NavItem(
-          label: 'Weekly',
-          icon: Icons.view_week_outlined,
-          selected: selectedSection == AppSection.weekly,
-          onTap: () => widget.onSectionSelected(AppSection.weekly),
         ),
         _NavItem(
           label: 'Monthly',
@@ -205,7 +196,6 @@ class _HomeShellPageState extends State<HomeShellPage> {
   Widget _sectionContent(AppSection section) {
     return switch (section) {
       AppSection.daily => DailyPlannerPage(initialDate: widget.dailyDate),
-      AppSection.weekly => WeeklyPlannerPage(initialDate: widget.weeklyDate),
       AppSection.monthly => MonthlyPlannerPage(initialDate: widget.monthlyDate),
       AppSection.sprints => SprintProjectsTab(
           weekIndex: widget.sprintWeekIndex ?? 0,
